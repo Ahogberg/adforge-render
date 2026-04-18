@@ -1,0 +1,17 @@
+{
+  "name": "adforge-render-server",
+  "version": "1.0.0",
+  "description": "AdForge ebook render server — fills HTML template and renders to PDF",
+  "main": "render-server.js",
+  "scripts": {
+    "start": "node render-server.js",
+    "setup": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.40.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
