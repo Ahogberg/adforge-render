@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>AdForge Production Desk</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo"><span>A</span><strong>AdForge</strong></div>
+    <button class="new-project" id="new-project">+ New project</button>
+    <nav>
+      <button class="nav-item active"><i class="dot"></i> Production desk</button>
+      <button class="nav-item" id="create-demo">◇ Create demo project</button>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="engine-mode">Checking engine…</span>
+      <button id="set-key">Operator access</button>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div><span class="overline">Operations</span><h1>Production desk</h1></div>
+      <div class="top-actions"><span class="live"><i></i> Live queue</span><button id="refresh">Refresh</button></div>
+    </header>
+    <section class="metrics" id="metrics"></section>
+    <section class="desk">
+      <div class="queue-panel">
+        <div class="panel-head"><span>Projects</span><small id="project-count">0 active</small></div>
+        <div class="project-list" id="project-list"><div class="empty">No projects yet.</div></div>
+      </div>
+      <div class="detail-panel" id="detail-panel">
+        <div class="empty-detail"><span class="forge-icon">A</span><h2>Select a project</h2><p>Follow the source from intake to reviewed delivery.</p></div>
+      </div>
+      <aside class="activity-panel">
+        <div class="panel-head"><span>Activity</span><small>Audit trail</small></div>
+        <div id="activity" class="activity"><div class="empty">Project events appear here.</div></div>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="project-dialog">
+    <form id="intake-form">
+      <div class="dialog-head"><div><span class="overline">New source</span><h2>Start a content run</h2></div><button type="button" class="close" id="close-dialog">×</button></div>
+      <div class="form-grid">
+        <label>Company<input name="companyName" required placeholder="Northstar Advisory"></label>
+        <label>Contact name<input name="contactName" required placeholder="Maya Chen"></label>
+        <label>Contact email<input name="contactEmail" type="email" required placeholder="maya@company.com"></label>
+        <label>Company website<input name="website" type="url" required placeholder="https://company.com"></label>
+        <label>Source type<select name="sourceType"><option>webinar</option><option>podcast</option><option>workshop</option><option>keynote</option><option>interview</option><option>presentation</option></select></label>
+        <label>Source URL<input name="sourceUrl" type="url" placeholder="https://..."></label>
+        <label class="wide">Audience<input name="audience" required placeholder="Who should this campaign help?"></label>
+        <label class="wide">Offer<input name="offer" required placeholder="What does the company sell?"></label>
+        <label class="wide">Call to action<input name="callToAction" required placeholder="Book a 30-minute strategy review"></label>
+        <label>Primary colour<input name="primaryColor" value="#E8C97A" pattern="#[0-9A-Fa-f]{6}"></label>
+        <label>Source file<input name="sourceFile" type="file" accept="audio/*,video/*,.pdf,.ppt,.pptx"></label>
+        <label class="wide">Transcript (optional)<textarea name="transcript" placeholder="Paste a transcript, or upload the source recording above."></textarea></label>
+        <label class="wide">Tone notes<textarea name="toneNotes" placeholder="Clear, candid, senior, practical..."></textarea></label>
+      </div>
+      <div class="dialog-actions"><span>Production starts immediately after intake.</span><button type="submit">Queue project →</button></div>
+    </form>
+  </dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>

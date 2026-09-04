@@ -1,17 +1,43 @@
 {
-  "name": "adforge-render-server",
-  "version": "1.0.0",
-  "description": "AdForge ebook render server — fills HTML template and renders to PDF",
-  "main": "render-server.js",
+  "name": "adforge-production-engine",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Operator-led production system for turning expert recordings into publication-ready B2B campaigns",
+  "type": "module",
+  "main": "dist/src/server.js",
   "scripts": {
-    "start": "node render-server.js",
-    "setup": "npx playwright install chromium"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "vitest run",
+    "check": "npm run build && npm test",
+    "setup:browsers": "playwright install chromium"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "playwright": "^1.40.0"
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "handlebars": "^4.7.8",
+    "helmet": "^8.1.0",
+    "multer": "^2.0.2",
+    "openai": "^6.3.0",
+    "playwright": "1.62.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.1",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+data/
+uploads/
+artifacts/
+output/
+tmp/
+playwright-report/
+coverage/
+*.log
