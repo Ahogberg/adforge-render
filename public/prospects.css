@@ -1,0 +1,24 @@
+[hidden] { display: none !important; }
+.score-card { margin-top: 20px; display: grid; grid-template-columns: 130px 1fr; border: 1px solid var(--line); background: var(--panel); }
+.score-card > div { padding: 22px; border-right: 1px solid var(--line); }
+.score-card span, .preview-angle > span, .email-preview > span { display: block; color: #5d605d; font: 9px monospace; text-transform: uppercase; letter-spacing: .1em; }
+.score-card b { display: block; margin: 9px 0 3px; color: var(--gold); font-size: 38px; }
+.score-card small { color: #777; font: 9px monospace; text-transform: uppercase; }
+.score-card ul { margin: 0; padding: 20px 28px 20px 42px; color: #939692; font-size: 12px; line-height: 1.6; }
+.score-card li + li { margin-top: 6px; }
+.preview-angle { margin-top: 20px; padding: 23px; border: 1px solid var(--line); }
+.preview-angle h3 { margin: 12px 0 9px; font: 400 23px/1.2 Georgia, serif; }
+.preview-angle p { margin: 0; color: #777; font-size: 12px; line-height: 1.65; }
+.email-preview { margin-top: 20px; border: 1px solid var(--line); background: #0b0d0d; padding: 22px; }
+.email-preview strong { display: block; margin: 11px 0 14px; font-size: 13px; }
+.email-preview pre { margin: 0; color: #a1a49f; font: 12px/1.65 Arial, sans-serif; white-space: pre-wrap; }
+.empty.inline { margin-top: 20px; border: 1px dashed var(--line); }
+.info-card a { color: var(--gold); text-decoration: none; }
+.import-guide { margin-bottom: 22px; padding: 18px; border: 1px solid var(--line); background: var(--panel); }
+.import-guide strong { display: block; margin-bottom: 9px; font-size: 12px; }
+.import-guide code { color: var(--gold); font: 10px/1.7 monospace; overflow-wrap: anywhere; }
+.import-guide p { margin: 10px 0 0; color: #747774; font-size: 11px; line-height: 1.6; }
+@media(max-width:760px) {
+  .score-card { grid-template-columns: 1fr; }
+  .score-card > div { border-right: 0; border-bottom: 1px solid var(--line); }
+}

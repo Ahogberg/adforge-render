@@ -1,7 +1,17 @@
 import { createReadStream } from 'node:fs';
 import OpenAI from 'openai';
 import { config } from './config.js';
-import { campaignBundleSchema, type BrandProfile, type CampaignBundle, type Intake } from './types.js';
+import {
+  campaignBundleSchema,
+  prospectPreviewSchema,
+  prospectQualificationSchema,
+  type BrandProfile,
+  type CampaignBundle,
+  type Intake,
+  type ProspectInput,
+  type ProspectPreview,
+  type ProspectQualification,
+} from './types.js';
 
 const client = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : undefined;
 
@@ -21,6 +31,36 @@ const bundleJsonSchema = {
       eyebrow: { type: 'string' }, headline: { type: 'string' }, subheadline: { type: 'string' }, bullets: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } }, formHeading: { type: 'string' }, buttonLabel: { type: 'string' },
     } },
     sourceReferences: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false, required: ['claim', 'quote', 'speaker', 'timestamp'], properties: { claim: { type: 'string' }, quote: { type: 'string' }, speaker: { type: 'string' }, timestamp: { type: 'string' } } } },
+  },
+} as const;
+
+const prospectJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['qualification', 'preview'],
+  properties: {
+    qualification: {
+      type: 'object', additionalProperties: false,
+      required: ['score', 'tier', 'fitReasons', 'risks', 'likelyAudience', 'likelyOffer', 'sourceSignal', 'personalizationAngle'],
+      properties: {
+        score: { type: 'integer', minimum: 0, maximum: 100 },
+        tier: { type: 'string', enum: ['A', 'B', 'C', 'reject'] },
+        fitReasons: { type: 'array', minItems: 2, maxItems: 5, items: { type: 'string' } },
+        risks: { type: 'array', maxItems: 4, items: { type: 'string' } },
+        likelyAudience: { type: 'string' }, likelyOffer: { type: 'string' },
+        sourceSignal: { type: 'string' }, personalizationAngle: { type: 'string' },
+      },
+    },
+    preview: {
+      type: 'object', additionalProperties: false,
+      required: ['campaignAngle', 'guideTitle', 'guideSubtitle', 'whyNow', 'sourceMoment', 'articleAngles', 'linkedinHooks', 'outreachSubject', 'outreachBody'],
+      properties: {
+        campaignAngle: { type: 'string' }, guideTitle: { type: 'string' }, guideSubtitle: { type: 'string' },
+        whyNow: { type: 'string' }, sourceMoment: { type: 'string' },
+        articleAngles: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
+        linkedinHooks: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
+        outreachSubject: { type: 'string' }, outreachBody: { type: 'string' },
+      },
+    },
   },
 } as const;
 
@@ -62,6 +102,26 @@ export async function generateCampaign(intake: Intake, brand: BrandProfile, tran
       pullQuote: section.pullQuote ?? undefined,
       sourceTimestamp: section.sourceTimestamp ?? undefined,
     })),
+  };
+}
+
+export async function generateProspectPreview(
+  input: ProspectInput,
+  brand: BrandProfile,
+): Promise<{ qualification: ProspectQualification; preview: ProspectPreview }> {
+  if (!client) return createDemoProspectPreview(input, brand);
+  const response = await client.responses.create({
+    model: config.contentModel,
+    store: false,
+    instructions: `You are the research editor for AdForge, a productized B2B content service. Qualify one company and create a highly specific campaign preview from supplied evidence only. The ideal customer is an English-speaking boutique consultancy, training firm, or expert-led professional-services company with a high-value offer and useful long-form source material. Never invent revenue, team size, customers, outcomes, quotes, or facts. Do not flatter. Reject weak fits. The outreach email must be plain text, under 120 words, mention the exact source title naturally, explain one observed content opportunity, link conceptually to the preview, state the $1,500/month price, and end with a low-friction asynchronous question. Do not request a meeting.`,
+    input: `COMPANY\n${input.companyName}\nWebsite: ${input.website}\nContact: ${input.contactName || 'Unknown'}${input.role ? `, ${input.role}` : ''}\nCountry: ${input.country || 'Unknown'}\nOffer hint: ${input.offerHint || 'Infer cautiously from supplied website signals'}\nNotes: ${input.notes || 'None'}\n\nPUBLIC SOURCE\nTitle: ${input.sourceTitle}\nURL: ${input.sourceUrl}\nOperator-supplied summary/excerpt:\n${input.sourceSummary}\n\nWEBSITE SIGNALS\nTitle: ${brand.title}\nDescription: ${brand.description}\nVisible copy excerpt: ${brand.voiceSample.slice(0, 8_000)}`,
+    text: { format: { type: 'json_schema', name: 'adforge_prospect_preview', strict: true, schema: prospectJsonSchema } },
+  });
+  if (!response.output_text) throw new Error('The prospect model returned no output');
+  const parsed = JSON.parse(response.output_text) as { qualification?: unknown; preview?: unknown };
+  return {
+    qualification: prospectQualificationSchema.parse(parsed.qualification),
+    preview: prospectPreviewSchema.parse(parsed.preview),
   };
 }
 
@@ -107,3 +167,64 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
 }
 
 const demoTranscript = `[00:00] Speaker A: Most teams already have more expertise than they publish. The problem is that the knowledge is trapped inside meetings, webinars, and individual conversations.\n[02:18] Speaker B: The useful shift is to treat a recording as source evidence rather than finished content.\n[06:42] Speaker A: Once the central decision is clear, every format can support the same argument without repeating the same words.`;
+
+function createDemoProspectPreview(
+  input: ProspectInput,
+  brand: BrandProfile,
+): { qualification: ProspectQualification; preview: ProspectPreview } {
+  const sourceIdea = firstSentence(input.sourceSummary);
+  const contact = input.contactName ? ` ${input.contactName.split(/\s+/)[0]}` : '';
+  const likelyOffer = input.offerHint || brand.description || `expert services from ${input.companyName}`;
+  return {
+    qualification: {
+      score: 84,
+      tier: 'A',
+      fitReasons: [
+        'The company publishes substantial expert-led source material.',
+        'The source contains a practical point of view that can support a connected campaign.',
+        'The offer appears to benefit from authority-building content rather than high-volume promotion.',
+      ],
+      risks: input.contactEmail ? [] : ['A verified business contact email is still required before outreach.'],
+      likelyAudience: 'Senior B2B decision-makers evaluating specialist expertise',
+      likelyOffer,
+      sourceSignal: sourceIdea,
+      personalizationAngle: `Develop ${input.sourceTitle} around the decision implied by its strongest practical idea.`,
+    },
+    preview: {
+      campaignAngle: `Turn the central idea in “${input.sourceTitle}” into a practical decision framework.`,
+      guideTitle: `The Practical Guide to ${titleCase(topicFrom(input.sourceTitle))}`,
+      guideSubtitle: `A focused field guide developed from ${input.companyName}'s original expertise`,
+      whyNow: `${input.companyName} already has the raw material. The opportunity is to give one strong idea a clearer argument, premium presentation, and a month of coordinated distribution.`,
+      sourceMoment: sourceIdea,
+      articleAngles: [
+        `The hidden constraint behind ${topicFrom(input.sourceTitle)}`,
+        'What experienced teams notice before everyone else',
+        'A practical framework buyers can use immediately',
+      ],
+      linkedinHooks: [
+        `Most teams misunderstand ${topicFrom(input.sourceTitle)}.`,
+        'A webinar is not the asset. The decision inside it is.',
+        `The strongest idea in “${input.sourceTitle}” deserves more than one publication day.`,
+      ],
+      outreachSubject: `A campaign hidden inside ${input.sourceTitle}`,
+      outreachBody: `Hi${contact},\n\nI reviewed “${input.sourceTitle}”. Its strongest campaign opening is the argument that ${lowerFirst(sourceIdea)}.\n\nI mapped that idea into a practical guide, eight LinkedIn posts, three emails, and landing-page copy. The preview is below.\n\nAdForge produces the complete package within 48 hours for $1,500/month, asynchronously.\n\nWorth turning this source into the full campaign?`,
+    },
+  };
+}
+
+function firstSentence(value: string): string {
+  const sentence = value.trim().split(/(?<=[.!?])\s+/)[0] ?? value.trim();
+  return sentence.slice(0, 240).replace(/[.!?]+$/, '');
+}
+
+function topicFrom(value: string): string {
+  return value.replace(/^(webinar|podcast|workshop|keynote|interview)\s*[:\-–—]?\s*/i, '').trim();
+}
+
+function titleCase(value: string): string {
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function lowerFirst(value: string): string {
+  return value ? `${value[0]?.toLowerCase()}${value.slice(1)}` : value;
+}

@@ -118,3 +118,87 @@ export interface Project {
   error?: string;
   mode: 'live' | 'demo';
 }
+
+export const prospectStatusSchema = z.enum([
+  'imported',
+  'queued',
+  'researching',
+  'preview-ready',
+  'approved',
+  'sent',
+  'replied',
+  'qualified',
+  'won',
+  'lost',
+  'unsubscribed',
+  'failed',
+]);
+
+export const prospectInputSchema = z.object({
+  companyName: z.string().trim().min(2).max(120),
+  website: z.string().trim().url().max(500),
+  contactName: z.string().trim().max(120).optional().default(''),
+  contactEmail: z.string().trim().email().max(200).optional().or(z.literal('')).default(''),
+  role: z.string().trim().max(120).optional().default(''),
+  country: z.string().trim().max(80).optional().default(''),
+  sourceUrl: z.string().trim().url().max(1000),
+  sourceTitle: z.string().trim().min(3).max(300),
+  sourceSummary: z.string().trim().min(20).max(12_000),
+  offerHint: z.string().trim().max(500).optional().default(''),
+  notes: z.string().trim().max(2000).optional().default(''),
+});
+
+export const prospectQualificationSchema = z.object({
+  score: z.number().int().min(0).max(100),
+  tier: z.enum(['A', 'B', 'C', 'reject']),
+  fitReasons: z.array(z.string()).min(2).max(5),
+  risks: z.array(z.string()).max(4),
+  likelyAudience: z.string(),
+  likelyOffer: z.string(),
+  sourceSignal: z.string(),
+  personalizationAngle: z.string(),
+});
+
+export const prospectPreviewSchema = z.object({
+  campaignAngle: z.string(),
+  guideTitle: z.string(),
+  guideSubtitle: z.string(),
+  whyNow: z.string(),
+  sourceMoment: z.string(),
+  articleAngles: z.array(z.string()).length(3),
+  linkedinHooks: z.array(z.string()).length(3),
+  outreachSubject: z.string(),
+  outreachBody: z.string(),
+});
+
+export type ProspectStatus = z.infer<typeof prospectStatusSchema>;
+export type ProspectInput = z.infer<typeof prospectInputSchema>;
+export type ProspectQualification = z.infer<typeof prospectQualificationSchema>;
+export type ProspectPreview = z.infer<typeof prospectPreviewSchema>;
+
+export interface ProspectEvent {
+  id: string;
+  at: string;
+  type: 'status' | 'note' | 'email' | 'conversion' | 'error';
+  message: string;
+}
+
+export interface Prospect {
+  id: string;
+  previewToken: string;
+  input: ProspectInput;
+  status: ProspectStatus;
+  createdAt: string;
+  updatedAt: string;
+  mode: 'live' | 'demo';
+  qualification?: ProspectQualification;
+  preview?: ProspectPreview;
+  brand?: BrandProfile;
+  approvedAt?: string;
+  sentAt?: string;
+  providerMessageId?: string;
+  replyNote?: string;
+  conversionValue?: number;
+  error?: string;
+  events: ProspectEvent[];
+}

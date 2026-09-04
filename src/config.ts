@@ -13,6 +13,7 @@ export const config = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   publicUrl: process.env.ADFORGE_PUBLIC_URL || 'http://localhost:3001',
+  marketingUrl: process.env.ADFORGE_MARKETING_URL || 'https://adforge-monthly.ahogberg.chatgpt.site',
   openaiKey: process.env.OPENAI_API_KEY || '',
   contentModel: process.env.OPENAI_CONTENT_MODEL || 'gpt-5.6-luna',
   transcriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe-diarize',
@@ -22,6 +23,10 @@ export const config = {
   templateDir: path.resolve(process.cwd(), 'templates'),
   maxUploadBytes: 600 * 1024 * 1024,
   maxConcurrentJobs: Math.max(1, integer(process.env.ADFORGE_JOB_CONCURRENCY, 1)),
+  maxConcurrentProspects: Math.max(1, integer(process.env.ADFORGE_PROSPECT_CONCURRENCY, 2)),
+  resendKey: process.env.RESEND_API_KEY || '',
+  outreachFrom: process.env.ADFORGE_OUTREACH_FROM || '',
+  outreachReplyTo: process.env.ADFORGE_OUTREACH_REPLY_TO || '',
 };
 
 if (process.env.NODE_ENV === 'production' && config.operatorKey === 'local-adforge-demo') {

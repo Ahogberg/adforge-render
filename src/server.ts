@@ -6,18 +6,25 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import multer from 'multer';
+import { parse } from 'csv-parse/sync';
 import { closeBrowser } from './brand.js';
 import { config } from './config.js';
+import { sendProspectEmail } from './outreach.js';
 import { ProductionPipeline } from './pipeline.js';
+import { ProspectEngine } from './prospect-engine.js';
+import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview.js';
+import { ProspectStore } from './prospect-store.js';
 import { renderReviewPage } from './review.js';
 import { ProjectStore } from './store.js';
-import { intakeSchema } from './types.js';
+import { intakeSchema, prospectInputSchema, prospectStatusSchema, type ProspectInput } from './types.js';
 
 mkdirSync(config.uploadDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
 
 const store = new ProjectStore();
 const pipeline = new ProductionPipeline(store);
+const prospectStore = new ProspectStore();
+const prospectEngine = new ProspectEngine(prospectStore);
 const upload = multer({
   dest: config.uploadDir,
   limits: { fileSize: config.maxUploadBytes, files: 1 },
@@ -27,9 +34,11 @@ const upload = multer({
     else callback(new Error('Only audio, video, PDF, and presentation files are accepted'));
   },
 });
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 
 export async function createApp() {
   await store.initialize();
+  await prospectStore.initialize();
   const app = express();
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
@@ -38,7 +47,12 @@ export async function createApp() {
   app.use(express.urlencoded({ extended: false, limit: '64kb' }));
   app.use(express.static(path.resolve(process.cwd(), 'public')));
 
-  app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'adforge-production-engine', mode: config.openaiKey ? 'live' : 'demo' }));
+  app.get('/health', (_request, response) => response.json({
+    status: 'ok',
+    service: 'adforge-production-engine',
+    mode: config.openaiKey ? 'live' : 'demo',
+    outreach: config.resendKey && config.outreachFrom ? 'live' : 'dry-run',
+  }));
 
   const intakeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
   app.post('/api/intake', intakeLimiter, upload.single('sourceFile'), asyncHandler(async (request, response) => {
@@ -68,6 +82,96 @@ export async function createApp() {
     await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Client submitted consolidated revision notes' });
     pipeline.enqueue(project.id);
     return response.send(successPage('Revision received', 'The requested changes have entered the production queue.'));
+  }));
+
+  app.get('/preview/:token', asyncHandler(async (request, response) => {
+    const prospect = await prospectStore.findByToken(param(request, 'token'));
+    if (!prospect || !prospect.preview || !prospect.qualification) return response.status(404).send('Campaign Preview is not available.');
+    response.type('html').send(renderProspectPreview(prospect));
+  }));
+
+  app.get('/unsubscribe/:token', asyncHandler(async (request, response) => {
+    const prospect = await prospectStore.findByToken(param(request, 'token'));
+    if (!prospect) return response.status(404).send('This preference link is not available.');
+    response.type('html').send(unsubscribeConfirmation(prospect.previewToken, prospect.input.companyName));
+  }));
+
+  app.post('/api/unsubscribe/:token', express.urlencoded({ extended: false }), asyncHandler(async (request, response) => {
+    const prospect = await prospectStore.findByToken(param(request, 'token'));
+    if (!prospect) return response.status(404).send('This preference link is not available.');
+    await prospectStore.update(prospect.id, { status: 'unsubscribed' }, { type: 'status', message: 'Contact opted out of outreach' });
+    response.type('html').send(renderUnsubscribePage(prospect.input.companyName));
+  }));
+
+  app.use('/api/prospects', operatorOnly);
+  app.get('/api/prospects', asyncHandler(async (_request, response) => response.json(await prospectStore.list())));
+  app.post('/api/prospects', asyncHandler(async (request, response) => {
+    const input = prospectInputSchema.parse(request.body);
+    response.status(201).json(await prospectStore.create(input, config.openaiKey ? 'live' : 'demo'));
+  }));
+  app.post('/api/prospects/import', csvUpload.single('file'), asyncHandler(async (request, response) => {
+    const rows = request.file
+      ? parse(request.file.buffer, { columns: true, skip_empty_lines: true, trim: true, bom: true }) as Array<Record<string, unknown>>
+      : Array.isArray(request.body) ? request.body as Array<Record<string, unknown>> : [];
+    if (!rows.length) return response.status(400).json({ error: 'Upload a CSV file or send a JSON array' });
+    if (rows.length > 500) return response.status(400).json({ error: 'Import is limited to 500 prospects per batch' });
+    const inputs = rows.map((row) => prospectInputSchema.parse(normalizeProspectRow(row)));
+    const result = await prospectStore.createMany(inputs, config.openaiKey ? 'live' : 'demo');
+    response.status(201).json({ created: result.created.length, duplicates: result.duplicates, prospectIds: result.created.map((item) => item.id) });
+  }));
+  app.post('/api/prospects/batch/generate', asyncHandler(async (request, response) => {
+    const requested = Array.isArray(request.body.ids) ? request.body.ids.map(String) : [];
+    const ids = requested.length ? requested : (await prospectStore.list()).filter((item) => ['imported', 'failed'].includes(item.status)).slice(0, 50).map((item) => item.id);
+    prospectEngine.enqueueMany(ids);
+    response.status(202).json({ queued: ids.length, ids });
+  }));
+  app.post('/api/prospects/demo/create', asyncHandler(async (_request, response) => {
+    const input = prospectInputSchema.parse({
+      companyName: 'Northstar Advisory', website: 'https://example.com', contactName: 'Maya Chen',
+      contactEmail: 'maya@example.com', role: 'Managing Partner', country: 'United Kingdom',
+      sourceUrl: 'https://example.com/webinar', sourceTitle: 'Building a Repeatable Growth Operating System',
+      sourceSummary: 'Most teams already have sufficient expertise, but it remains trapped inside meetings and one-off presentations. The useful shift is to turn a source recording into decision-ready material rather than treating the transcript as finished content.',
+      offerHint: 'Strategic growth advisory for expert-led companies', notes: 'Demo prospect for the complete asynchronous acquisition flow.',
+    });
+    const prospect = await prospectStore.create(input, 'demo');
+    prospectEngine.enqueue(prospect.id);
+    response.status(202).json(prospect);
+  }));
+  app.get('/api/prospects/:id', asyncHandler(async (request, response) => {
+    const prospect = await prospectStore.get(param(request, 'id'));
+    if (!prospect) return response.status(404).json({ error: 'Prospect not found' });
+    response.json(prospect);
+  }));
+  app.post('/api/prospects/:id/generate', asyncHandler(async (request, response) => {
+    const id = param(request, 'id');
+    prospectEngine.enqueue(id);
+    response.status(202).json({ status: 'queued' });
+  }));
+  app.post('/api/prospects/:id/approve', asyncHandler(async (request, response) => {
+    const id = param(request, 'id');
+    const prospect = await prospectStore.get(id);
+    if (!prospect?.preview) return response.status(409).json({ error: 'Campaign Preview must be generated before approval' });
+    if (prospect.status === 'unsubscribed') return response.status(409).json({ error: 'This contact has opted out' });
+    response.json(await prospectStore.update(id, { status: 'approved', approvedAt: new Date().toISOString() }, { type: 'status', message: 'Outreach approved by operator' }));
+  }));
+  app.post('/api/prospects/:id/send', asyncHandler(async (request, response) => {
+    if (request.body.confirm !== true) return response.status(400).json({ error: 'Explicit send confirmation is required' });
+    const id = param(request, 'id');
+    const prospect = await prospectStore.get(id);
+    if (!prospect) return response.status(404).json({ error: 'Prospect not found' });
+    const result = await sendProspectEmail(prospect);
+    if (result.dryRun) {
+      await prospectStore.update(id, {}, { type: 'email', message: 'Dry-run passed; configure the email provider to send' });
+      return response.json({ status: 'dry-run', previewUrl: `${config.publicUrl}/preview/${prospect.previewToken}` });
+    }
+    response.json(await prospectStore.update(id, { status: 'sent', sentAt: new Date().toISOString(), providerMessageId: result.messageId }, { type: 'email', message: 'Personalized outreach sent' }));
+  }));
+  app.post('/api/prospects/:id/status', asyncHandler(async (request, response) => {
+    const status = prospectStatusSchema.parse(request.body.status);
+    if (!['replied', 'qualified', 'won', 'lost', 'unsubscribed'].includes(status)) return response.status(400).json({ error: 'This status cannot be set manually' });
+    const note = String(request.body.note || '').trim();
+    const conversionValue = status === 'won' ? Number(request.body.conversionValue || 1500) : undefined;
+    response.json(await prospectStore.update(param(request, 'id'), { status, replyNote: note || undefined, conversionValue }, { type: status === 'won' ? 'conversion' : 'status', message: note || `Prospect marked ${status}` }));
   }));
 
   app.use('/api/projects', operatorOnly);
@@ -132,6 +236,26 @@ function normalizeIntake(body: Record<string, unknown>): Record<string, unknown>
   return { ...body, transcript: body.transcript || '', toneNotes: body.toneNotes || '', primaryColor: body.primaryColor || '#E8C97A' };
 }
 
+function normalizeProspectRow(row: Record<string, unknown>): Record<string, unknown> {
+  const get = (...keys: string[]) => {
+    const key = keys.find((candidate) => row[candidate] !== undefined);
+    return key ? row[key] : '';
+  };
+  return {
+    companyName: get('companyName', 'company', 'company_name'),
+    website: get('website', 'companyWebsite', 'company_website'),
+    contactName: get('contactName', 'contact', 'contact_name', 'name'),
+    contactEmail: get('contactEmail', 'email', 'contact_email'),
+    role: get('role', 'title', 'job_title'),
+    country: get('country'),
+    sourceUrl: get('sourceUrl', 'source_url', 'content_url'),
+    sourceTitle: get('sourceTitle', 'source_title', 'content_title'),
+    sourceSummary: get('sourceSummary', 'source_summary', 'summary', 'excerpt'),
+    offerHint: get('offerHint', 'offer_hint', 'offer'),
+    notes: get('notes'),
+  };
+}
+
 function param(request: Request, name: string): string {
   const value = request.params[name];
   if (typeof value !== 'string') throw new Error(`Missing route parameter: ${name}`);
@@ -144,6 +268,14 @@ function asyncHandler(handler: (request: Request, response: Response, next: Next
 
 function successPage(title: string, message: string): string {
   return `<!doctype html><html><body style="margin:0;background:#090a0a;color:#f4f0e8;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="color:#e8c97a;text-transform:uppercase;letter-spacing:.12em">AdForge</p><h1>${title}</h1><p style="color:#8d918d">${message}</p></main></body></html>`;
+}
+
+function unsubscribeConfirmation(token: string, companyName: string): string {
+  return `<!doctype html><html><body style="margin:0;background:#090a0a;color:#f4f0e8;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="color:#e8c97a;text-transform:uppercase;letter-spacing:.12em">AdForge</p><h1>Stop outreach?</h1><p style="color:#8d918d">Confirm that we should not contact ${escapeHtml(companyName)} at this address.</p><form method="post" action="/api/unsubscribe/${encodeURIComponent(token)}"><button style="border:0;background:#e8c97a;color:#111;padding:13px 18px;font-weight:800">Confirm opt-out</button></form></main></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] ?? character);
 }
 
 if (process.env.NODE_ENV !== 'test') {

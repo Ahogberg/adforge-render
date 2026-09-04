@@ -6,14 +6,18 @@
   <meta name="robots" content="noindex,nofollow">
   <title>AdForge Production Desk</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/prospects.css">
 </head>
 <body>
   <aside class="sidebar">
     <div class="logo"><span>A</span><strong>AdForge</strong></div>
-    <button class="new-project" id="new-project">+ New project</button>
+    <button class="new-project" id="primary-action">+ Import prospects</button>
     <nav>
-      <button class="nav-item active"><i class="dot"></i> Production desk</button>
-      <button class="nav-item" id="create-demo">◇ Create demo project</button>
+      <button class="nav-item active" id="nav-prospects"><i class="dot"></i> Prospect engine</button>
+      <button class="nav-item" id="nav-production">Production desk</button>
+      <button class="nav-item" id="generate-batch">↗ Generate queued previews</button>
+      <button class="nav-item" id="demo-prospect">◇ Create demo prospect</button>
+      <button class="nav-item" id="create-demo" hidden>◇ Create demo project</button>
     </nav>
     <div class="sidebar-foot">
       <span id="engine-mode">Checking engine…</span>
@@ -23,14 +27,14 @@
 
   <main class="workspace">
     <header class="topbar">
-      <div><span class="overline">Operations</span><h1>Production desk</h1></div>
+      <div><span class="overline" id="view-overline">Acquisition</span><h1 id="view-title">Prospect engine</h1></div>
       <div class="top-actions"><span class="live"><i></i> Live queue</span><button id="refresh">Refresh</button></div>
     </header>
     <section class="metrics" id="metrics"></section>
     <section class="desk">
       <div class="queue-panel">
-        <div class="panel-head"><span>Projects</span><small id="project-count">0 active</small></div>
-        <div class="project-list" id="project-list"><div class="empty">No projects yet.</div></div>
+        <div class="panel-head"><span id="record-label">Prospects</span><small id="record-count">0 ready</small></div>
+        <div class="project-list" id="record-list"><div class="empty">No prospects yet.</div></div>
       </div>
       <div class="detail-panel" id="detail-panel">
         <div class="empty-detail"><span class="forge-icon">A</span><h2>Select a project</h2><p>Follow the source from intake to reviewed delivery.</p></div>
@@ -44,7 +48,7 @@
 
   <dialog id="project-dialog">
     <form id="intake-form">
-      <div class="dialog-head"><div><span class="overline">New source</span><h2>Start a content run</h2></div><button type="button" class="close" id="close-dialog">×</button></div>
+      <div class="dialog-head"><div><span class="overline">New source</span><h2>Start a content run</h2></div><button type="button" class="close" id="close-project-dialog">×</button></div>
       <div class="form-grid">
         <label>Company<input name="companyName" required placeholder="Northstar Advisory"></label>
         <label>Contact name<input name="contactName" required placeholder="Maya Chen"></label>
@@ -61,6 +65,21 @@
         <label class="wide">Tone notes<textarea name="toneNotes" placeholder="Clear, candid, senior, practical..."></textarea></label>
       </div>
       <div class="dialog-actions"><span>Production starts immediately after intake.</span><button type="submit">Queue project →</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="prospect-dialog">
+    <form id="prospect-form">
+      <div class="dialog-head"><div><span class="overline">Prospect import</span><h2>Add qualified source leads</h2></div><button type="button" class="close" id="close-prospect-dialog">×</button></div>
+      <div class="import-guide">
+        <strong>CSV columns</strong>
+        <code>companyName, website, contactName, contactEmail, role, country, sourceUrl, sourceTitle, sourceSummary, offerHint, notes</code>
+        <p>One public long-form source per row. A useful summary or transcript excerpt is required so personalization remains evidence-based.</p>
+      </div>
+      <div class="form-grid">
+        <label class="wide">Prospect CSV<input name="file" type="file" accept=".csv,text/csv" required></label>
+      </div>
+      <div class="dialog-actions"><span>Maximum 500 rows. Duplicates are ignored.</span><button type="submit">Import prospects →</button></div>
     </form>
   </dialog>
   <script src="/app.js" defer></script>

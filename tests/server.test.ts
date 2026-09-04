@@ -17,4 +17,18 @@ describe('production API', () => {
     await request(app).get('/api/projects').expect(401);
     await request(app).get('/api/projects').set('x-adforge-key', 'local-adforge-demo').expect(200);
   });
+
+  it('imports prospects from CSV while keeping the database operator-only', async () => {
+    await request(app).get('/api/prospects').expect(401);
+    const csv = [
+      'companyName,website,contactName,contactEmail,role,country,sourceUrl,sourceTitle,sourceSummary,offerHint',
+      'CSV Advisory,https://example.org,Alex Smith,alex@example.org,Partner,UK,https://example.org/webinar,Operating Better,This source explains how specialist teams turn expertise into repeatable client decisions.,Operational advisory',
+    ].join('\n');
+    const response = await request(app)
+      .post('/api/prospects/import')
+      .set('x-adforge-key', 'local-adforge-demo')
+      .attach('file', Buffer.from(csv), { filename: 'prospects.csv', contentType: 'text/csv' })
+      .expect(201);
+    expect(response.body.created + response.body.duplicates).toBe(1);
+  });
 });
