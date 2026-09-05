@@ -1,8 +1,10 @@
 import { scrapeBrand } from './brand.js';
 import { config } from './config.js';
 import { generateCampaign, transcribeFile } from './ai.js';
+import type { ProjectNotifier } from './notifications.js';
 import { inspectCampaign } from './quality.js';
 import { renderArtifacts } from './render.js';
+import { hasSource } from './source.js';
 import { ProjectStore } from './store.js';
 import type { BrandProfile, Project } from './types.js';
 
@@ -33,7 +35,7 @@ export class ProductionPipeline {
   private queue = new WorkQueue(config.maxConcurrentJobs);
   private enqueued = new Set<string>();
 
-  constructor(private readonly store: ProjectStore) {}
+  constructor(private readonly store: ProjectStore, private readonly notifier?: ProjectNotifier) {}
 
   enqueue(projectId: string): void {
     if (this.enqueued.has(projectId)) return;
@@ -47,13 +49,14 @@ export class ProductionPipeline {
   private async run(projectId: string): Promise<void> {
     try {
       let project = await this.requireProject(projectId);
+      if (project.mode === 'live' && !hasSource(project)) {
+        await this.store.setStatus(projectId, 'awaiting-source', 5, 'Waiting for the source recording or transcript before production can begin');
+        return;
+      }
       await this.store.setStatus(projectId, 'transcribing', 16, 'Preparing and transcribing the source');
       let transcript = project.transcript;
       if (!transcript && project.sourceFile) transcript = await transcribeFile(project.sourceFile);
-      if (!transcript) {
-        if (project.mode === 'demo') transcript = await transcribeFile('demo');
-        else throw new Error('A source upload or transcript is required before production can begin');
-      }
+      if (!transcript) transcript = await transcribeFile('demo');
       project = await this.store.update(projectId, { transcript });
 
       await this.store.setStatus(projectId, 'extracting', 32, 'Extracting brand and source signals');
@@ -76,9 +79,11 @@ export class ProductionPipeline {
 
       await this.store.setStatus(projectId, 'rendering', 88, 'Rendering the premium guide and delivery package');
       const artifacts = await renderArtifacts(project);
-      await this.store.update(projectId, { artifacts, status: 'client-review', progress: 100, error: undefined }, { type: 'status', message: 'Campaign ready for one consolidated review' });
+      project = await this.store.update(projectId, { artifacts, status: 'client-review', progress: 100, error: undefined }, { type: 'status', message: 'Campaign ready for one consolidated review' });
+      await this.notifier?.campaignReady(project);
     } catch (error) {
-      await this.store.update(projectId, { status: 'failed', error: messageOf(error) }, { type: 'error', message: messageOf(error) });
+      const project = await this.store.update(projectId, { status: 'failed', error: messageOf(error) }, { type: 'error', message: messageOf(error) });
+      await this.notifier?.productionFailed(project, messageOf(error));
     }
   }
 

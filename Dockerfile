@@ -11,6 +11,9 @@ RUN npm run build
 FROM mcr.microsoft.com/playwright:v1.62.0-noble
 
 ENV NODE_ENV=production
+# Every persistent directory (data, uploads, artifacts) lives under one mount point
+# so a single volume keeps the store, sources, and deliveries across deploys.
+ENV ADFORGE_STORAGE_DIR=/app/storage
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -20,7 +23,7 @@ COPY --from=build /app/dist ./dist
 COPY templates ./templates
 COPY public ./public
 
-RUN mkdir -p /app/data /app/uploads /app/artifacts && chown -R pwuser:pwuser /app
+RUN mkdir -p /app/storage && chown -R pwuser:pwuser /app
 
 USER pwuser
 

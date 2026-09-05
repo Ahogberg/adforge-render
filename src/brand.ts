@@ -58,3 +58,33 @@ export async function scrapeBrand(website: string, fallbackColor: string): Promi
     await context.close();
   }
 }
+
+/**
+ * Reads the main readable text of a public page (article, show notes, a
+ * published transcript). Uses the same SSRF-guarded browser as brand capture.
+ */
+export async function extractPageText(url: string): Promise<{ title: string; text: string }> {
+  const safeUrl = await assertPublicUrl(url);
+  const context = await (await browser()).newContext({
+    javaScriptEnabled: true,
+    serviceWorkers: 'block',
+    viewport: { width: 1365, height: 900 },
+  });
+  try {
+    const page = await context.newPage();
+    await page.route('**/*', async (route) => {
+      if (await isAllowedBrowserRequest(route.request().url())) await route.continue();
+      else await route.abort('blockedbyclient');
+    });
+    await page.goto(safeUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 25_000 });
+    await page.waitForTimeout(1_500);
+    return await page.evaluate(() => {
+      document.querySelectorAll('script, style, noscript, nav, header, footer, aside, form, iframe, svg').forEach((node) => node.remove());
+      const root = document.querySelector('article') || document.querySelector('main') || document.body;
+      const text = (root as HTMLElement).innerText.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      return { title: document.title, text };
+    });
+  } finally {
+    await context.close();
+  }
+}

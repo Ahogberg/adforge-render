@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const projectStatusSchema = z.enum([
   'intake',
+  'awaiting-source',
   'queued',
   'transcribing',
   'extracting',
@@ -91,7 +92,7 @@ export interface BrandProfile {
 export interface ProjectEvent {
   id: string;
   at: string;
-  type: 'status' | 'note' | 'approval' | 'error';
+  type: 'status' | 'note' | 'approval' | 'email' | 'error';
   message: string;
 }
 
@@ -104,6 +105,8 @@ export interface Project {
   updatedAt: string;
   transcript: string;
   sourceFile?: string;
+  /** Text captured automatically from the public source URL, waiting for operator confirmation. */
+  sourceCandidate?: string;
   reviewToken: string;
   brand?: BrandProfile;
   bundle?: CampaignBundle;
@@ -115,6 +118,8 @@ export interface Project {
   };
   events: ProjectEvent[];
   revisionNote?: string;
+  /** Set when the review link has been emailed to the client. */
+  deliveredAt?: string;
   error?: string;
   mode: 'live' | 'demo';
 }

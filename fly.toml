@@ -1,0 +1,49 @@
+# Fly.io configuration for the AdForge production engine.
+#
+# First deploy:
+#   fly launch --copy-config --no-deploy        # creates the app; keep this file
+#   fly volumes create adforge_storage --size 10 --region arn
+#   fly secrets set ADFORGE_OPERATOR_KEY=... OPENAI_API_KEY=... RESEND_API_KEY=... \
+#     ADFORGE_OUTREACH_FROM="AdForge <hello@adforgecreative.com>" \
+#     ADFORGE_OUTREACH_REPLY_TO=hello@adforgecreative.com \
+#     ADFORGE_OPERATOR_EMAIL=hello@adforgecreative.com
+#   fly deploy
+#
+# The queue runs in-process, so the machine must never auto-stop mid-job.
+
+app = "adforge-engine"
+primary_region = "arn"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3001"
+  NODE_ENV = "production"
+  ADFORGE_STORAGE_DIR = "/app/storage"
+  ADFORGE_PUBLIC_URL = "https://adforge-engine.fly.dev"
+  ADFORGE_MARKETING_URL = "https://adforgecreative.com"
+  ADFORGE_ALLOWED_ORIGINS = "https://adforgecreative.com,https://www.adforgecreative.com"
+  ADFORGE_AUTO_DELIVER = "false"
+
+[[mounts]]
+  source = "adforge_storage"
+  destination = "/app/storage"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

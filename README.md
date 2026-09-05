@@ -6,7 +6,9 @@ It also includes the acquisition layer: import source-qualified prospects, score
 
 ## What is included
 
-- Public multipart intake endpoint for a transcript or source file
+- Public multipart intake endpoint for a transcript, a source file, or just a public source URL
+- Automatic source capture: direct recordings are downloaded and transcribed, readable pages become a transcript candidate, anything else waits for the operator
+- Transactional email through Resend: application confirmations, operator alerts, review-link delivery, client decisions, and failures
 - Safe brand-signal extraction with DNS and browser-request SSRF protection
 - Speaker-aware transcription and structured campaign generation when OpenAI is configured
 - Fully functional demo mode when no API key is present
@@ -36,13 +38,19 @@ For live projects, set `OPENAI_API_KEY`. The content and transcription model nam
 
 ## API flow
 
-1. `POST /api/intake` accepts the customer brief and optional `sourceFile`.
-2. The in-process queue transcribes, extracts brand signals, writes, checks, and renders.
-3. `GET /review/:token` gives the client a private review page.
-4. Approval locks the delivery; a revision re-enters the same controlled pipeline.
-5. Operators download the finished ZIP from the dashboard or authenticated API.
+1. `POST /api/intake` accepts the customer brief with an optional `transcript` or `sourceFile`. The client receives a confirmation email and the operator an alert.
+2. With a transcript or recording on file the in-process queue transcribes, extracts brand signals, writes, checks, and renders immediately.
+3. With only a `sourceUrl` the project waits in `awaiting-source`. The engine downloads direct audio/video files automatically, stores readable page text as a candidate transcript, and otherwise leaves the source to the operator.
+4. `POST /api/projects/:id/source` (operator, multipart `transcript` or `sourceFile`) completes intake and queues production. The dashboard shows this form, prefilled with any captured candidate.
+5. When the quality gate passes the operator is emailed. `POST /api/projects/:id/deliver` (or the dashboard's **Send to client**) emails the private review link. Set `ADFORGE_AUTO_DELIVER=true` to skip the operator check.
+6. `GET /review/:token` gives the client a private review page. Approval locks the delivery and emails the operator; a revision re-enters the same controlled pipeline and comes back through step 5.
+7. Operators download the finished ZIP from the dashboard or authenticated API.
 
 Authenticated operator routes require `x-adforge-key: <ADFORGE_OPERATOR_KEY>`.
+
+## Email
+
+All email goes through one verified Resend sender (`ADFORGE_OUTREACH_FROM`). Operator notifications go to `ADFORGE_OPERATOR_EMAIL`. Without `RESEND_API_KEY` every send is recorded on the project timeline as a dry run, so the complete flow can be exercised locally. `GET /health` reports whether outreach, notifications, and delivery are live.
 
 ## Prospect flow
 
@@ -59,20 +67,40 @@ Required CSV fields are `companyName`, `website`, `sourceUrl`, `sourceTitle`, an
 
 ## Production deployment
 
-Build and run the container with a persistent volume mounted over `/app/data`, `/app/uploads`, and `/app/artifacts`:
+Everything persistent (`data/`, `uploads/`, `artifacts/`) lives under `ADFORGE_STORAGE_DIR`, which the container sets to `/app/storage`. Mount one volume there.
+
+### Fly.io (recommended)
+
+`fly.toml` is included. The queue runs in-process, so the machine is configured to never auto-stop, and the Playwright renderer needs the 2 GB memory setting.
+
+```bash
+fly launch --copy-config --no-deploy
+fly volumes create adforge_storage --size 10 --region arn
+fly secrets set \
+  ADFORGE_OPERATOR_KEY='replace-with-a-long-secret' \
+  OPENAI_API_KEY='...' \
+  RESEND_API_KEY='...' \
+  ADFORGE_OUTREACH_FROM='AdForge <hello@adforgecreative.com>' \
+  ADFORGE_OUTREACH_REPLY_TO='hello@adforgecreative.com' \
+  ADFORGE_OPERATOR_EMAIL='hello@adforgecreative.com'
+fly deploy
+```
+
+Then set `ADFORGE_PUBLIC_URL` in `fly.toml` to the app's final hostname (a custom domain such as `https://engine.adforgecreative.com` after `fly certs add`), and point the marketing site's `NEXT_PUBLIC_ADFORGE_API_URL` at it so the application form posts straight into the engine.
+
+### Any Docker host
 
 ```bash
 docker build -t adforge-production-engine .
 docker run --rm -p 3001:3001 \
   -e ADFORGE_OPERATOR_KEY='replace-with-a-long-secret' \
-  -e ADFORGE_PUBLIC_URL='https://production.example.com' \
+  -e ADFORGE_PUBLIC_URL='https://engine.example.com' \
   -e ADFORGE_ALLOWED_ORIGINS='https://www.example.com' \
+  -e ADFORGE_OPERATOR_EMAIL='you@example.com' \
   -e OPENAI_API_KEY='...' \
   -e RESEND_API_KEY='...' \
   -e ADFORGE_OUTREACH_FROM='AdForge <hello@your-domain.com>' \
-  -v adforge-data:/app/data \
-  -v adforge-uploads:/app/uploads \
-  -v adforge-artifacts:/app/artifacts \
+  -v adforge-storage:/app/storage \
   adforge-production-engine
 ```
 

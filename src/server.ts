@@ -9,12 +9,15 @@ import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { closeBrowser } from './brand.js';
 import { config } from './config.js';
+import { isMailLive } from './mail.js';
+import { ProjectNotifier } from './notifications.js';
 import { sendProspectEmail } from './outreach.js';
 import { ProductionPipeline } from './pipeline.js';
 import { ProspectEngine } from './prospect-engine.js';
 import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview.js';
 import { ProspectStore } from './prospect-store.js';
 import { renderReviewPage } from './review.js';
+import { captureSource, hasSource } from './source.js';
 import { ProjectStore } from './store.js';
 import { intakeSchema, prospectInputSchema, prospectStatusSchema, type ProspectInput } from './types.js';
 
@@ -22,7 +25,8 @@ mkdirSync(config.uploadDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
 
 const store = new ProjectStore();
-const pipeline = new ProductionPipeline(store);
+const notifier = new ProjectNotifier(store);
+const pipeline = new ProductionPipeline(store, notifier);
 const prospectStore = new ProspectStore();
 const prospectEngine = new ProspectEngine(prospectStore);
 const upload = multer({
@@ -51,16 +55,25 @@ export async function createApp() {
     status: 'ok',
     service: 'adforge-production-engine',
     mode: config.openaiKey ? 'live' : 'demo',
-    outreach: config.resendKey && config.outreachFrom ? 'live' : 'dry-run',
+    outreach: isMailLive() ? 'live' : 'dry-run',
+    notifications: isMailLive() && config.operatorEmail ? 'live' : 'dry-run',
+    delivery: config.autoDeliver ? 'automatic' : 'operator-gated',
   }));
 
   const intakeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
   app.post('/api/intake', intakeLimiter, upload.single('sourceFile'), asyncHandler(async (request, response) => {
     const intake = intakeSchema.parse(normalizeIntake(request.body));
-    const project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
-    if (request.file) await store.update(project.id, { sourceFile: request.file.path });
-    pipeline.enqueue(project.id);
-    response.status(202).json({ projectId: project.id, status: 'queued', reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` });
+    let project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
+    if (request.file) project = await store.update(project.id, { sourceFile: request.file.path });
+    if (project.mode === 'demo' || hasSource(project)) {
+      project = await store.setStatus(project.id, 'queued', 8, 'Production queued');
+      pipeline.enqueue(project.id);
+    } else {
+      project = await store.setStatus(project.id, 'awaiting-source', 5, 'Waiting for the source recording or transcript');
+      void captureSource(project, store, (id) => pipeline.enqueue(id));
+    }
+    void notifier.intakeReceived(project);
+    response.status(202).json({ projectId: project.id, status: project.status, reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` });
   }));
 
   app.get('/review/:token', asyncHandler(async (request, response) => {
@@ -74,13 +87,15 @@ export async function createApp() {
     if (!project) return response.status(404).send('Project not found');
     const decision = request.body.decision === 'approve' ? 'approve' : 'revise';
     if (decision === 'approve') {
-      await store.update(project.id, { status: 'approved' }, { type: 'approval', message: 'Client approved the campaign' });
+      const approved = await store.update(project.id, { status: 'approved' }, { type: 'approval', message: 'Client approved the campaign' });
+      void notifier.clientDecision(approved, 'approve');
       return response.send(successPage('Campaign approved', 'The final delivery is locked. AdForge has been notified.'));
     }
     const note = String(request.body.note || '').trim();
     if (note.length < 3) return response.status(400).send('Please include the requested changes.');
-    await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Client submitted consolidated revision notes' });
+    const revising = await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Client submitted consolidated revision notes' });
     pipeline.enqueue(project.id);
+    void notifier.clientDecision(revising, 'revise', note);
     return response.send(successPage('Revision received', 'The requested changes have entered the production queue.'));
   }));
 
@@ -164,7 +179,7 @@ export async function createApp() {
       await prospectStore.update(id, {}, { type: 'email', message: 'Dry-run passed; configure the email provider to send' });
       return response.json({ status: 'dry-run', previewUrl: `${config.publicUrl}/preview/${prospect.previewToken}` });
     }
-    response.json(await prospectStore.update(id, { status: 'sent', sentAt: new Date().toISOString(), providerMessageId: result.messageId }, { type: 'email', message: 'Personalized outreach sent' }));
+    response.json(await prospectStore.update(id, { status: 'sent', sentAt: new Date().toISOString(), providerMessageId: result.id }, { type: 'email', message: 'Personalized outreach sent' }));
   }));
   app.post('/api/prospects/:id/status', asyncHandler(async (request, response) => {
     const status = prospectStatusSchema.parse(request.body.status);
@@ -183,9 +198,33 @@ export async function createApp() {
   }));
   app.post('/api/projects/:id/run', asyncHandler(async (request, response) => {
     const id = param(request, 'id');
+    const project = await store.get(id);
+    if (!project) return response.status(404).json({ error: 'Project not found' });
+    if (project.mode === 'live' && !hasSource(project)) return response.status(409).json({ error: 'Add the source recording or transcript before running production' });
     await store.setStatus(id, 'queued', 8, 'Project queued by operator');
     pipeline.enqueue(id);
     response.status(202).json({ status: 'queued' });
+  }));
+  app.post('/api/projects/:id/source', upload.single('sourceFile'), asyncHandler(async (request, response) => {
+    const id = param(request, 'id');
+    const project = await store.get(id);
+    if (!project) return response.status(404).json({ error: 'Project not found' });
+    const transcript = String(request.body?.transcript || '').trim();
+    if (!transcript && !request.file) return response.status(400).json({ error: 'Paste a transcript or upload the source recording' });
+    if (transcript.length > 250_000) return response.status(400).json({ error: 'The transcript is too long' });
+    const patch: Partial<typeof project> = { sourceCandidate: undefined, status: 'queued', progress: 8 };
+    if (transcript) patch.transcript = transcript;
+    if (request.file) patch.sourceFile = request.file.path;
+    await store.update(id, patch, { type: 'status', message: request.file ? 'Source recording added by operator; production queued' : 'Transcript added by operator; production queued' });
+    pipeline.enqueue(id);
+    response.status(202).json({ status: 'queued' });
+  }));
+  app.post('/api/projects/:id/deliver', asyncHandler(async (request, response) => {
+    const project = await store.get(param(request, 'id'));
+    if (!project) return response.status(404).json({ error: 'Project not found' });
+    if (!project.artifacts) return response.status(409).json({ error: 'The campaign has not been rendered yet' });
+    const delivered = await notifier.deliverToClient(project);
+    response.json({ status: delivered.deliveredAt ? 'sent' : 'dry-run', deliveredAt: delivered.deliveredAt ?? null, reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` });
   }));
   app.post('/api/projects/:id/approve', asyncHandler(async (request, response) => {
     response.json(await store.update(param(request, 'id'), { status: 'approved' }, { type: 'approval', message: 'Campaign approved by operator' }));

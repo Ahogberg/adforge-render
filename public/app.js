@@ -106,9 +106,29 @@ function renderProjectDetail(item) {
   if (!item) { emptyDetail('Select a project', 'Follow the source from intake to reviewed delivery.'); return; }
   const completed = Math.ceil(item.progress / 17);
   const deliverables = item.bundle ? [['Premium guide', `${item.bundle.sections.length + 3} pages`], ['LinkedIn posts', item.bundle.linkedinPosts.length], ['Nurture emails', item.bundle.emails.length], ['Landing page', 'Ready'], ['Source references', item.bundle.sourceReferences.length]] : [['Production bundle', 'Generating']];
-  const actions = item.artifacts ? `<a href="/api/projects/${item.id}/download/deliveryZip" data-download>Download bundle</a><a href="/review/${item.reviewToken}" target="_blank">Open client review</a><button class="primary" data-approve-project="${item.id}">Approve</button>` : `<button class="primary" data-run="${item.id}">Run production</button>`;
-  $('#detail-panel').innerHTML = `<section class="project-detail"><div class="detail-head"><div><span class="overline">${escapeHtml(item.intake.sourceType)}</span><h2>${escapeHtml(item.intake.companyName)}</h2><p>${escapeHtml(item.bundle?.campaignAngle || item.intake.offer)}</p></div><span class="status-pill">${escapeHtml(item.status)}</span></div><div class="stage-track">${[0,1,2,3,4,5].map((index) => `<i class="stage ${index < completed ? 'done' : ''}"></i>`).join('')}</div><div class="detail-grid"><div class="info-card"><span>Audience</span><strong>${escapeHtml(item.intake.audience)}</strong></div><div class="info-card"><span>Primary CTA</span><strong>${escapeHtml(item.intake.callToAction)}</strong></div><div class="info-card"><span>Quality gate</span><strong>${item.quality ? `${item.quality.score}/100 · ${item.quality.blockers.length ? 'Blocked' : 'Passed'}` : 'Waiting for content'}</strong></div><div class="info-card"><span>Production mode</span><strong>${item.mode === 'live' ? 'Live OpenAI pipeline' : 'Deterministic demo'}</strong></div></div><div class="deliverables">${deliverables.map(([name,count]) => `<div class="deliverable"><span>${name}</span><b>${count}</b></div>`).join('')}</div><div class="actions">${actions}</div>${item.error ? `<p style="color:var(--red)">${escapeHtml(item.error)}</p>` : ''}</section>`;
+  const actions = projectActions(item);
+  const sourceForm = item.status === 'awaiting-source' ? sourcePanel(item) : '';
+  $('#detail-panel').innerHTML = `<section class="project-detail"><div class="detail-head"><div><span class="overline">${escapeHtml(item.intake.sourceType)}</span><h2>${escapeHtml(item.intake.companyName)}</h2><p>${escapeHtml(item.bundle?.campaignAngle || item.intake.offer)}</p></div><span class="status-pill">${escapeHtml(item.status)}</span></div><div class="stage-track">${[0,1,2,3,4,5].map((index) => `<i class="stage ${index < completed ? 'done' : ''}"></i>`).join('')}</div><div class="detail-grid"><div class="info-card"><span>Audience</span><strong>${escapeHtml(item.intake.audience)}</strong></div><div class="info-card"><span>Primary CTA</span><strong>${escapeHtml(item.intake.callToAction)}</strong></div><div class="info-card"><span>Quality gate</span><strong>${item.quality ? `${item.quality.score}/100 · ${item.quality.blockers.length ? 'Blocked' : 'Passed'}` : 'Waiting for content'}</strong></div><div class="info-card"><span>Production mode</span><strong>${item.mode === 'live' ? 'Live OpenAI pipeline' : 'Deterministic demo'}</strong></div></div><div class="deliverables">${deliverables.map(([name,count]) => `<div class="deliverable"><span>${name}</span><b>${count}</b></div>`).join('')}</div>${sourceForm}<div class="actions">${actions}</div>${item.error ? `<p style="color:var(--red)">${escapeHtml(item.error)}</p>` : ''}</section>`;
   bindProjectActions();
+}
+
+function projectActions(item) {
+  if (!item.artifacts) {
+    const hasSource = Boolean((item.transcript || '').trim() || item.sourceFile);
+    if (item.status === 'awaiting-source' || (item.mode === 'live' && !hasSource)) return '';
+    return `<button class="primary" data-run="${item.id}">Run production</button>`;
+  }
+  const delivered = item.deliveredAt ? `<span class="delivered">Sent to client ${new Date(item.deliveredAt).toLocaleString()}</span>` : '';
+  const deliver = item.status === 'client-review' ? `<button class="${item.deliveredAt ? '' : 'primary'}" data-deliver="${item.id}">${item.deliveredAt ? 'Resend review link' : 'Send to client'}</button>` : '';
+  return `<a href="/api/projects/${item.id}/download/deliveryZip" data-download>Download bundle</a><a href="/review/${item.reviewToken}" target="_blank">Open client review</a>${deliver}<button data-approve-project="${item.id}">Approve</button>${delivered}`;
+}
+
+function sourcePanel(item) {
+  const candidate = item.sourceCandidate || '';
+  const hint = candidate
+    ? `${candidate.length.toLocaleString()} characters were captured from the source URL. Check that it is the expert content itself, edit if needed, then start production.`
+    : 'No recording or transcript was supplied. Paste the transcript or upload the recording to start production.';
+  return `<form class="source-panel" data-source="${item.id}"><span class="overline">Source needed</span><p>${escapeHtml(hint)}</p>${item.intake.sourceUrl ? `<a href="${escapeHtml(item.intake.sourceUrl)}" target="_blank" rel="noreferrer">Open source URL ↗</a>` : ''}<textarea name="transcript" placeholder="Paste the transcript or captured text here">${escapeHtml(candidate)}</textarea><label>Or upload the recording<input name="sourceFile" type="file" accept="audio/*,video/*,.pdf,.ppt,.pptx"></label><button class="primary" type="submit">Start production →</button></form>`;
 }
 
 function renderActivity(item) { $('#activity').innerHTML = item ? [...item.events].reverse().map((event) => `<div class="event ${event.type}"><time>${new Date(event.at).toLocaleString()}</time><p>${escapeHtml(event.message)}</p></div>`).join('') : '<div class="empty">Events appear here.</div>'; }
@@ -133,11 +153,29 @@ function bindProspectActions() {
 
 function bindProjectActions() {
   document.querySelectorAll('[data-run]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.run}/run`));
+  document.querySelectorAll('[data-deliver]').forEach((button) => button.onclick = async () => {
+    if (!confirm('Email the private review link to the client now?')) return;
+    const result = await api(`/api/projects/${button.dataset.deliver}/deliver`, { method: 'POST' });
+    if (result.status === 'dry-run') alert('Dry run only. Configure RESEND_API_KEY and ADFORGE_OUTREACH_FROM to email clients.');
+    await load();
+  });
+  document.querySelectorAll('[data-source]').forEach((form) => form.onsubmit = async (event) => {
+    event.preventDefault();
+    const button = event.submitter;
+    button.disabled = true;
+    try { await api(`/api/projects/${form.dataset.source}/source`, { method: 'POST', body: new FormData(form) }); await load(); }
+    catch (error) { alert(error.message); }
+    finally { button.disabled = false; }
+  });
   document.querySelectorAll('[data-approve-project]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.approveProject}/approve`));
   document.querySelectorAll('[data-download]').forEach((link) => link.onclick = (event) => { event.preventDefault(); fetch(link.href, { headers: { 'x-adforge-key': state.key } }).then((response) => { if (!response.ok) throw new Error('Download failed'); return response.blob(); }).then((blob) => { const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'adforge-delivery.zip'; anchor.click(); URL.revokeObjectURL(url); }); });
 }
 
-async function act(path) { await api(path, { method: 'POST' }); await load(); }
+async function act(path) {
+  try { await api(path, { method: 'POST' }); }
+  catch (error) { alert(error.message); }
+  await load();
+}
 function setView(view) { state.view = view; state.selected = currentList()[0]?.id || null; render(); }
 function requestKey() { const key = prompt('Enter your AdForge operator key'); if (key) { state.key = key; sessionStorage.setItem('adforge-key', key); void load(); } }
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = String(value ?? ''); return div.innerHTML; }
