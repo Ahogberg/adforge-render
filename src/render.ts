@@ -18,10 +18,14 @@ export async function renderArtifacts(project: Project): Promise<NonNullable<Pro
       sections: project.bundle.sections.map((section, index) => ({
         ...section,
         number: String(index + 1).padStart(2, '0'),
-        folio: String(index + 3).padStart(2, '0'),
+        folio: String(index + 4).padStart(2, '0'),
       })),
     },
-    brand: project.brand,
+    brand: {
+      ...project.brand,
+      accentColor: safeAccent(project.brand.primaryColor, project.intake.primaryColor),
+      onAccentColor: readableText(safeAccent(project.brand.primaryColor, project.intake.primaryColor)),
+    },
   };
   const ebookTemplate = Handlebars.compile(await readFile(path.join(config.templateDir, 'ebook.hbs'), 'utf8'));
   const landingTemplate = Handlebars.compile(await readFile(path.join(config.templateDir, 'landing.hbs'), 'utf8'));
@@ -50,7 +54,7 @@ export async function renderArtifacts(project: Project): Promise<NonNullable<Pro
     await browser.close();
   }
 
-  const zipPath = path.join(directory, 'adforge-delivery.zip');
+  const zipPath = path.join(directory, 'afterword-delivery.zip');
   await zipDirectory(directory, zipPath);
   return { pdf: pdfPath, landingPage: landingPath, deliveryZip: zipPath };
 }
@@ -59,6 +63,31 @@ function normalizeTypography(value: string): string {
   return value
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, '-')
     .replace(/\u00a0/g, ' ');
+}
+
+function safeAccent(primary: string, fallback: string): string {
+  const candidate = parseRgb(primary);
+  if (candidate && relativeLuminance(candidate) >= 0.16 && relativeLuminance(candidate) <= 0.78) return primary;
+  const preferred = parseRgb(fallback);
+  if (preferred && relativeLuminance(preferred) >= 0.16 && relativeLuminance(preferred) <= 0.78) return fallback;
+  return '#1F4D3A';
+}
+
+function readableText(background: string): string {
+  const rgb = parseRgb(background);
+  return rgb && relativeLuminance(rgb) < 0.42 ? '#F7F3EA' : '#121414';
+}
+
+function parseRgb(value: string): [number, number, number] | undefined {
+  const hex = value.trim().match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (hex) return [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16)];
+  const rgb = value.trim().match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+  return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : undefined;
+}
+
+function relativeLuminance([red, green, blue]: [number, number, number]): number {
+  const channel = (value: number) => { const normalized = Math.min(255, value) / 255; return normalized <= .04045 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4; };
+  return .2126 * channel(red) + .7152 * channel(green) + .0722 * channel(blue);
 }
 
 async function zipDirectory(directory: string, destination: string): Promise<void> {

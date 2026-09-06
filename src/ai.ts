@@ -88,7 +88,7 @@ export async function generateCampaign(intake: Intake, brand: BrandProfile, tran
   const response = await client.responses.create({
     model: config.contentModel,
     store: false,
-    instructions: `You are the senior B2B editor inside AdForge. Turn source expertise into one coherent, commercially useful campaign. Preserve the speaker's point of view. Never invent statistics, customers, quotes, or outcomes. Every direct quote and factual claim must include a source timestamp. Use clear international English. Avoid AI clichés, inflated claims, and repetitive hooks. The result must feel edited, not summarized.`,
+    instructions: `You are the senior B2B editor inside Afterword. Turn source expertise into one coherent, commercially useful campaign. Preserve the speaker's point of view. Never invent statistics, customers, quotes, or outcomes. Every direct quote and factual claim must include a source timestamp. Use clear international English. Avoid AI clichés, inflated claims, and repetitive hooks. The result must feel edited, not summarized.`,
     input: `CLIENT\nCompany: ${intake.companyName}\nAudience: ${intake.audience}\nOffer: ${intake.offer}\nCTA: ${intake.callToAction}\nTone notes: ${intake.toneNotes || 'Clear, expert, direct'}\n\nBRAND SIGNALS\n${JSON.stringify(brand)}\n\nREVISION NOTE\n${revisionNote || 'First edition'}\n\nSOURCE TRANSCRIPT\n${transcript.slice(0, 180_000)}`,
     text: { format: { type: 'json_schema', name: 'adforge_campaign_bundle', strict: true, schema: bundleJsonSchema } },
   });
@@ -113,7 +113,7 @@ export async function generateProspectPreview(
   const response = await client.responses.create({
     model: config.contentModel,
     store: false,
-    instructions: `You are the research editor for AdForge, a productized B2B content service. Qualify one company and create a highly specific campaign preview from supplied evidence only. The ideal customer is an English-speaking boutique consultancy, training firm, or expert-led professional-services company with a high-value offer and useful long-form source material. Never invent revenue, team size, customers, outcomes, quotes, or facts. Do not flatter. Reject weak fits. The outreach email must be plain text, under 120 words, mention the exact source title naturally, explain one observed content opportunity, link conceptually to the preview, state the $1,500/month price, and end with a low-friction asynchronous question. Do not request a meeting.`,
+    instructions: `You are the research editor for Afterword, a productized B2B content service. Qualify one company and create a highly specific campaign preview from supplied evidence only. The ideal customer is an English-speaking boutique consultancy, training firm, or expert-led professional-services company with a high-value offer and useful long-form source material. Never invent revenue, team size, customers, outcomes, quotes, or facts. Do not flatter. Reject weak fits. The outreach email must be plain text, under 120 words, mention the exact source title naturally, explain one observed content opportunity, link conceptually to the preview, state the $1,500/month price, and end with a low-friction asynchronous question. Do not request a meeting.`,
     input: `COMPANY\n${input.companyName}\nWebsite: ${input.website}\nContact: ${input.contactName || 'Unknown'}${input.role ? `, ${input.role}` : ''}\nCountry: ${input.country || 'Unknown'}\nOffer hint: ${input.offerHint || 'Infer cautiously from supplied website signals'}\nNotes: ${input.notes || 'None'}\n\nPUBLIC SOURCE\nTitle: ${input.sourceTitle}\nURL: ${input.sourceUrl}\nOperator-supplied summary/excerpt:\n${input.sourceSummary}\n\nWEBSITE SIGNALS\nTitle: ${brand.title}\nDescription: ${brand.description}\nVisible copy excerpt: ${brand.voiceSample.slice(0, 8_000)}`,
     text: { format: { type: 'json_schema', name: 'adforge_prospect_preview', strict: true, schema: prospectJsonSchema } },
   });
@@ -207,7 +207,7 @@ function createDemoProspectPreview(
         `The strongest idea in “${input.sourceTitle}” deserves more than one publication day.`,
       ],
       outreachSubject: `A campaign hidden inside ${input.sourceTitle}`,
-      outreachBody: `Hi${contact},\n\nI reviewed “${input.sourceTitle}”. Its strongest campaign opening is the argument that ${lowerFirst(sourceIdea)}.\n\nI mapped that idea into a practical guide, eight LinkedIn posts, three emails, and landing-page copy. The preview is below.\n\nAdForge produces the complete package within 48 hours for $1,500/month, asynchronously.\n\nWorth turning this source into the full campaign?`,
+      outreachBody: `Hi${contact},\n\nI reviewed “${input.sourceTitle}”. Its strongest campaign opening is the argument that ${lowerFirst(sourceIdea)}.\n\nI mapped that idea into a practical guide, eight LinkedIn posts, three emails, and landing-page copy. The preview is below.\n\nAfterword produces the complete package within 48 hours for $1,500/month, asynchronously.\n\nWorth turning this source into the full campaign?`,
     },
   };
 }

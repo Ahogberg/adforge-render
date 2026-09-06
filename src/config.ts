@@ -27,6 +27,9 @@ export const config = {
   resendKey: process.env.RESEND_API_KEY || '',
   outreachFrom: process.env.ADFORGE_OUTREACH_FROM || '',
   outreachReplyTo: process.env.ADFORGE_OUTREACH_REPLY_TO || '',
+  intakeFrom: process.env.ADFORGE_INTAKE_FROM || process.env.ADFORGE_OUTREACH_FROM || '',
+  intakeReplyTo: process.env.ADFORGE_INTAKE_REPLY_TO || process.env.ADFORGE_OUTREACH_REPLY_TO || '',
+  intakeNotifyTo: process.env.ADFORGE_INTAKE_NOTIFY_TO || '',
 };
 
 if (process.env.NODE_ENV === 'production' && config.operatorKey === 'local-adforge-demo') {

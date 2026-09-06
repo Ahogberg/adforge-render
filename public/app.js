@@ -134,7 +134,7 @@ function bindProspectActions() {
 function bindProjectActions() {
   document.querySelectorAll('[data-run]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.run}/run`));
   document.querySelectorAll('[data-approve-project]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.approveProject}/approve`));
-  document.querySelectorAll('[data-download]').forEach((link) => link.onclick = (event) => { event.preventDefault(); fetch(link.href, { headers: { 'x-adforge-key': state.key } }).then((response) => { if (!response.ok) throw new Error('Download failed'); return response.blob(); }).then((blob) => { const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'adforge-delivery.zip'; anchor.click(); URL.revokeObjectURL(url); }); });
+  document.querySelectorAll('[data-download]').forEach((link) => link.onclick = (event) => { event.preventDefault(); fetch(link.href, { headers: { 'x-adforge-key': state.key } }).then((response) => { if (!response.ok) throw new Error('Download failed'); return response.blob(); }).then((blob) => { const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'afterword-delivery.zip'; anchor.click(); URL.revokeObjectURL(url); }); });
 }
 
 async function act(path) { await api(path, { method: 'POST' }); await load(); }

@@ -1,6 +1,6 @@
-# AdForge Production Engine
+# Afterword Production Engine
 
-AdForge turns one expert recording into a reviewed monthly B2B content bundle: a premium guide, eight LinkedIn posts, three emails, and landing-page copy. It is designed as the operator system behind a productized service, not as a self-serve writing toy.
+Afterword turns one expert recording into a reviewed monthly B2B content bundle: a premium guide, eight LinkedIn posts, three emails, and landing-page copy. The internal repository keeps its original `adforge-render` name; the customer-facing service is Afterword Monthly.
 
 It also includes the acquisition layer: import source-qualified prospects, score the fit, generate a private Campaign Preview and meeting-free outreach, approve the exact message, and track the prospect through reply, qualification, and $1,500 MRR conversion.
 
@@ -13,6 +13,7 @@ It also includes the acquisition layer: import source-qualified prospects, score
 - Deterministic editorial QA gates before anything reaches a client
 - Branded A4 PDF, HTML landing page, Markdown assets, source map, and ZIP delivery
 - Tokenized client review page with one-click approval or one consolidated revision
+- Automatic application confirmation and optional operator notification through Resend
 - Password-style operator API and a responsive production dashboard
 - Atomic local persistence, queue concurrency control, rate limiting, upload limits, and a non-root Docker runtime
 - CSV/JSON prospect import with duplicate protection and batches of up to 500 records
@@ -69,7 +70,7 @@ docker run --rm -p 3001:3001 \
   -e ADFORGE_ALLOWED_ORIGINS='https://www.example.com' \
   -e OPENAI_API_KEY='...' \
   -e RESEND_API_KEY='...' \
-  -e ADFORGE_OUTREACH_FROM='AdForge <hello@your-domain.com>' \
+  -e ADFORGE_OUTREACH_FROM='Afterword <hello@your-domain.com>' \
   -v adforge-data:/app/data \
   -v adforge-uploads:/app/uploads \
   -v adforge-artifacts:/app/artifacts \

@@ -9,6 +9,7 @@ import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { closeBrowser } from './brand.js';
 import { config } from './config.js';
+import { sendApplicationEmails } from './notifications.js';
 import { sendProspectEmail } from './outreach.js';
 import { ProductionPipeline } from './pipeline.js';
 import { ProspectEngine } from './prospect-engine.js';
@@ -60,6 +61,7 @@ export async function createApp() {
     const project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
     if (request.file) await store.update(project.id, { sourceFile: request.file.path });
     pipeline.enqueue(project.id);
+    void sendApplicationEmails(project).catch((error: unknown) => console.error('Application email failed:', error));
     response.status(202).json({ projectId: project.id, status: 'queued', reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` });
   }));
 
@@ -75,7 +77,7 @@ export async function createApp() {
     const decision = request.body.decision === 'approve' ? 'approve' : 'revise';
     if (decision === 'approve') {
       await store.update(project.id, { status: 'approved' }, { type: 'approval', message: 'Client approved the campaign' });
-      return response.send(successPage('Campaign approved', 'The final delivery is locked. AdForge has been notified.'));
+      return response.send(successPage('Campaign approved', 'The final delivery is locked. Afterword has been notified.'));
     }
     const note = String(request.body.note || '').trim();
     if (note.length < 3) return response.status(400).send('Please include the requested changes.');
@@ -267,11 +269,11 @@ function asyncHandler(handler: (request: Request, response: Response, next: Next
 }
 
 function successPage(title: string, message: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#090a0a;color:#f4f0e8;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="color:#e8c97a;text-transform:uppercase;letter-spacing:.12em">AdForge</p><h1>${title}</h1><p style="color:#8d918d">${message}</p></main></body></html>`;
+  return `<!doctype html><html><body style="margin:0;background:#f6f2ea;color:#1c1b18;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="font-family:Georgia,serif;font-size:22px">Afterword<span style="color:#1f4d3a">.</span></p><h1 style="font:400 48px Georgia,serif">${title}</h1><p style="color:#6b665c">${message}</p></main></body></html>`;
 }
 
 function unsubscribeConfirmation(token: string, companyName: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#090a0a;color:#f4f0e8;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="color:#e8c97a;text-transform:uppercase;letter-spacing:.12em">AdForge</p><h1>Stop outreach?</h1><p style="color:#8d918d">Confirm that we should not contact ${escapeHtml(companyName)} at this address.</p><form method="post" action="/api/unsubscribe/${encodeURIComponent(token)}"><button style="border:0;background:#e8c97a;color:#111;padding:13px 18px;font-weight:800">Confirm opt-out</button></form></main></body></html>`;
+  return `<!doctype html><html><body style="margin:0;background:#f6f2ea;color:#1c1b18;font-family:Arial;display:grid;place-items:center;min-height:100vh;text-align:center"><main><p style="font:22px Georgia,serif">Afterword<span style="color:#1f4d3a">.</span></p><h1>Stop outreach?</h1><p style="color:#6b665c">Confirm that we should not contact ${escapeHtml(companyName)} at this address.</p><form method="post" action="/api/unsubscribe/${encodeURIComponent(token)}"><button style="border:0;border-radius:3px;background:#1f4d3a;color:#f6f2ea;padding:13px 18px;font-weight:800">Confirm opt-out</button></form></main></body></html>`;
 }
 
 function escapeHtml(value: string): string {

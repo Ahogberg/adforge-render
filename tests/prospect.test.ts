@@ -40,7 +40,8 @@ describe('prospect generation', () => {
       brand, ...generated, events: [],
     };
     const html = renderProspectPreview(prospect);
-    expect(html).toContain('Private Campaign Preview');
+    expect(html).toContain('Private campaign preview');
+    expect(html).toContain('Afterword');
     expect(html).toContain('Thirteen finished assets');
     await expect(sendProspectEmail(prospect)).rejects.toThrow('Operator approval');
   });

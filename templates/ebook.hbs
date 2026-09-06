@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>{{bundle.title}}</title>
   <style>
-    :root { --brand: {{brand.primaryColor}}; --ink: #121414; --paper: #f6f2e9; --muted: #6f716d; }
+    :root { --brand: {{brand.accentColor}}; --on-brand: {{brand.onAccentColor}}; --ink: #121414; --paper: #f6f2e9; --muted: #6f716d; }
     * { box-sizing: border-box; }
     @page { size: A4; margin: 0; }
     body { margin: 0; color: var(--ink); background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -22,11 +22,17 @@
     .cover .subtitle { max-width: 125mm; color: #aaa9a3; font-size: 13pt; line-height: 1.6; }
     .cover-meta { display: flex; justify-content: space-between; align-items: end; padding-top: 7mm; border-top: .25mm solid #343737; color: #797c79; font-size: 8pt; line-height: 1.6; }
     .intro { background: var(--paper); display: grid; grid-template-columns: 1fr 52mm; gap: 16mm; }
-    .intro h2, .content h2, .checklist h2 { margin: 5mm 0 8mm; font: 400 27pt/1.15 Georgia, serif; letter-spacing: -.025em; }
+    .intro h2, .contents h2, .content h2, .checklist h2 { margin: 5mm 0 8mm; font: 400 27pt/1.15 Georgia, serif; letter-spacing: -.025em; }
     .intro p, .content p { color: #4d504d; font-size: 10.5pt; line-height: 1.75; }
     .intro-aside { border-left: .7mm solid var(--brand); padding-left: 7mm; }
     .intro-aside span { display: block; margin-bottom: 3mm; color: #8f8e88; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .12em; }
     .intro-aside strong { font: 400 16pt/1.35 Georgia, serif; }
+    .contents { background: #fff; }
+    .contents-list { list-style: none; margin: 17mm 0 0; padding: 0; border-top: .25mm solid #ddd7cc; }
+    .contents-list li { padding: 5mm 0; display: grid; grid-template-columns: 11mm 1fr auto; gap: 5mm; border-bottom: .25mm solid #ddd7cc; align-items: baseline; }
+    .contents-list span:first-child { color: var(--brand); font: 400 11pt Georgia, serif; }
+    .contents-list b { font-size: 10pt; }
+    .contents-list small { color: #99958d; font-size: 8pt; }
     .content { display: flex; flex-direction: column; }
     .section-number { color: #ddd8ce; font: 700 50pt/1 var(--font, Arial); margin-bottom: 9mm; }
     .body-copy { columns: 2; column-gap: 12mm; column-rule: .25mm solid #ece8df; }
@@ -38,11 +44,11 @@
     .checks { margin-top: 16mm; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12mm; }
     .check { padding: 7mm 0; border-top: .25mm solid #353838; display: grid; grid-template-columns: 10mm 1fr; gap: 4mm; color: #b9bab6; font-size: 10.5pt; line-height: 1.55; }
     .check b { width: 7mm; height: 7mm; border: .5mm solid var(--brand); color: var(--brand); display: grid; place-items: center; font-size: 7pt; }
-    .cta { background: var(--brand); display: flex; flex-direction: column; justify-content: center; }
-    .cta .eyebrow { color: rgba(0,0,0,.55); }
+    .cta { background: var(--brand); color: var(--on-brand); display: flex; flex-direction: column; justify-content: center; }
+    .cta .eyebrow { color: var(--on-brand); opacity: .7; }
     .cta h2 { max-width: 150mm; margin: 7mm 0; font: 400 34pt/1.1 Georgia, serif; letter-spacing: -.035em; }
-    .cta p { max-width: 125mm; font-size: 12pt; line-height: 1.7; color: rgba(0,0,0,.7); }
-    .cta-button { margin-top: 10mm; align-self: flex-start; padding: 5mm 8mm; background: #101212; color: #fff; font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .cta p { max-width: 125mm; font-size: 12pt; line-height: 1.7; color: var(--on-brand); opacity: .82; }
+    .cta-button { margin-top: 10mm; align-self: flex-start; padding: 5mm 8mm; background: var(--on-brand); color: var(--brand); font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
   </style>
 </head>
 <body>
@@ -53,7 +59,7 @@
       <h1>{{bundle.title}}</h1>
       <div class="subtitle">{{bundle.subtitle}}</div>
     </div>
-    <div class="cover-meta"><span>Developed from original expert source material</span><span>Prepared by AdForge</span></div>
+    <div class="cover-meta"><span>Developed from original expert source material</span><span>Prepared by Afterword</span></div>
   </section>
   <section class="page intro">
     <div>
@@ -63,6 +69,12 @@
     </div>
     <aside class="intro-aside"><span>Built for</span><strong>{{project.intake.audience}}</strong></aside>
     <div class="folio"><span>{{project.intake.companyName}}</span><b>02</b></div>
+  </section>
+  <section class="page contents">
+    <div class="eyebrow">Inside this guide</div>
+    <h2>A practical route through the central argument.</h2>
+    <ol class="contents-list">{{#each bundle.sections}}<li><span>{{number}}</span><b>{{title}}</b><small>{{#if sourceTimestamp}}{{sourceTimestamp}}{{else}}Source checked{{/if}}</small></li>{{/each}}</ol>
+    <div class="folio"><span>{{project.intake.companyName}}</span><b>03</b></div>
   </section>
   {{#each bundle.sections}}
   <section class="page content">
