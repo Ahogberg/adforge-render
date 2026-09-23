@@ -4,7 +4,9 @@ import { generateCampaign, transcribeFile } from './ai.js';
 import { inspectCampaign } from './quality.js';
 import { renderArtifacts } from './render.js';
 import { ProjectStore } from './store.js';
-import type { BrandProfile, Project } from './types.js';
+import type { BrandProfile, Project, QualityReport } from './types.js';
+
+const MAX_WRITING_ATTEMPTS = 2;
 
 type Task = () => Promise<void>;
 
@@ -65,13 +67,22 @@ export class ProductionPipeline {
       }
       project = await this.store.update(projectId, { brand });
 
-      await this.store.setStatus(projectId, 'writing', 52, 'Developing the guide and campaign assets');
-      const bundle = await generateCampaign(project.intake, brand, transcript, project.revisionNote);
-      project = await this.store.update(projectId, { bundle });
+      let quality: QualityReport | undefined;
+      let editorNote = '';
+      for (let attempt = 1; attempt <= MAX_WRITING_ATTEMPTS; attempt += 1) {
+        await this.store.setStatus(projectId, 'writing', 52, attempt === 1 ? 'Developing the guide and campaign assets' : 'Rewriting after a failed quality gate');
+        const instructions = [project.revisionNote, editorNote].filter(Boolean).join('\n\n');
+        const bundle = await generateCampaign(project.intake, brand, transcript, instructions);
+        project = await this.store.update(projectId, { bundle });
 
-      await this.store.setStatus(projectId, 'quality-check', 72, 'Checking completeness, source coverage, and consistency');
-      const quality = inspectCampaign(bundle);
-      if (quality.blockers.length) throw new Error(`Quality gate failed: ${quality.blockers.join(', ')}`);
+        await this.store.setStatus(projectId, 'quality-check', 72, 'Checking completeness, source coverage, and consistency');
+        quality = inspectCampaign(bundle, transcript);
+        if (!quality.blockers.length) break;
+        const failed = quality.checks.filter((check) => check.status === 'fail');
+        editorNote = `EDITOR NOTE: the previous draft failed these checks. Fix them.\n${failed.map((check) => `- ${check.name}: ${check.detail}`).join('\n')}`;
+        await this.store.update(projectId, { quality }, { type: 'note', message: `Quality gate failed on attempt ${attempt}: ${failed.map((check) => check.detail).join(' ')}` });
+      }
+      if (!quality || quality.blockers.length) throw new Error(`Quality gate failed: ${quality?.blockers.join(', ') ?? 'no content'}`);
       project = await this.store.update(projectId, { quality });
 
       await this.store.setStatus(projectId, 'rendering', 88, 'Rendering the premium guide and delivery package');

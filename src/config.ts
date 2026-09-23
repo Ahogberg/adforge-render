@@ -13,7 +13,7 @@ export const config = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   publicUrl: process.env.ADFORGE_PUBLIC_URL || 'http://localhost:3001',
-  marketingUrl: process.env.ADFORGE_MARKETING_URL || 'https://adforge-monthly.ahogberg.chatgpt.site',
+  marketingUrl: process.env.ADFORGE_MARKETING_URL || 'https://afterwordmonthly.com',
   openaiKey: process.env.OPENAI_API_KEY || '',
   contentModel: process.env.OPENAI_CONTENT_MODEL || 'gpt-5.6-luna',
   transcriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe-diarize',

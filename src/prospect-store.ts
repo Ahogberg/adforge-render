@@ -4,7 +4,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import type { Prospect, ProspectEvent, ProspectInput, ProspectStatus } from './types.js';
 
-interface ProspectStoreShape { prospects: Prospect[] }
+interface ProspectStoreShape { prospects: Prospect[]; suppressions?: string[] }
 
 export class ProspectStore {
   private filePath = path.join(config.dataDir, 'prospects.json');
@@ -34,18 +34,21 @@ export class ProspectStore {
   }
 
   async create(input: ProspectInput, mode: Prospect['mode']): Promise<Prospect> {
+    if (isSuppressed(await this.read(), input.contactEmail)) throw new SuppressedContactError();
     const duplicate = await this.findDuplicate(input.website, input.sourceUrl);
     if (duplicate) return duplicate;
     const prospect = buildProspect(input, mode);
     return this.mutate((data) => { data.prospects.push(prospect); return prospect; });
   }
 
-  async createMany(inputs: ProspectInput[], mode: Prospect['mode']): Promise<{ created: Prospect[]; duplicates: number }> {
+  async createMany(inputs: ProspectInput[], mode: Prospect['mode']): Promise<{ created: Prospect[]; duplicates: number; suppressed: number }> {
     return this.mutate((data) => {
       const known = new Set(data.prospects.map((prospect) => duplicateKey(prospect.input.website, prospect.input.sourceUrl)));
       const created: Prospect[] = [];
       let duplicates = 0;
+      let suppressed = 0;
       for (const input of inputs) {
+        if (isSuppressed(data, input.contactEmail)) { suppressed += 1; continue; }
         const key = duplicateKey(input.website, input.sourceUrl);
         if (known.has(key)) { duplicates += 1; continue; }
         known.add(key);
@@ -53,7 +56,7 @@ export class ProspectStore {
         data.prospects.push(prospect);
         created.push(prospect);
       }
-      return { created, duplicates };
+      return { created, duplicates, suppressed };
     });
   }
 
@@ -64,6 +67,35 @@ export class ProspectStore {
       Object.assign(prospect, patch, { updatedAt: new Date().toISOString() });
       if (event) prospect.events.push({ id: randomUUID(), at: new Date().toISOString(), ...event });
       return prospect;
+    });
+  }
+
+  async isSuppressed(email: string): Promise<boolean> {
+    return isSuppressed(await this.read(), email);
+  }
+
+  async listSuppressions(): Promise<string[]> {
+    return (await this.read()).suppressions ?? [];
+  }
+
+  /**
+   * Adds an email address or a whole domain ("example.com" or "@example.com") to the
+   * do-not-contact list and opts out every matching prospect that has not converted.
+   */
+  async suppress(value: string, reason: string): Promise<{ entry: string; affected: number }> {
+    const entry = normalizeSuppression(value);
+    return this.mutate((data) => {
+      data.suppressions = [...new Set([...(data.suppressions ?? []), entry])];
+      let affected = 0;
+      for (const prospect of data.prospects) {
+        if (!matchesSuppression(entry, prospect.input.contactEmail) || ['won', 'unsubscribed'].includes(prospect.status)) continue;
+        const now = new Date().toISOString();
+        prospect.status = 'unsubscribed';
+        prospect.updatedAt = now;
+        prospect.events.push({ id: randomUUID(), at: now, type: 'status', message: reason });
+        affected += 1;
+      }
+      return { entry, affected };
     });
   }
 
@@ -99,6 +131,26 @@ export class ProspectStore {
     await this.writeChain;
     return result;
   }
+}
+
+export class SuppressedContactError extends Error {
+  constructor() { super('This contact is on the do-not-contact list'); }
+}
+
+function normalizeSuppression(value: string): string {
+  const entry = value.trim().toLowerCase().replace(/^@/, '');
+  if (!/^[^\s@]+(@[^\s@]+)?\.[^\s@]+$/.test(entry)) throw new Error('Provide an email address or a domain');
+  return entry;
+}
+
+function matchesSuppression(entry: string, email: string): boolean {
+  const address = email.trim().toLowerCase();
+  if (!address) return false;
+  return entry.includes('@') ? address === entry : address.endsWith(`@${entry}`);
+}
+
+function isSuppressed(data: ProspectStoreShape, email: string): boolean {
+  return (data.suppressions ?? []).some((entry) => matchesSuppression(entry, email));
 }
 
 function normalizeUrl(value: string): string {

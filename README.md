@@ -37,10 +37,10 @@ For live projects, set `OPENAI_API_KEY`. The content and transcription model nam
 
 ## API flow
 
-1. `POST /api/intake` accepts the customer brief and optional `sourceFile`.
-2. The in-process queue transcribes, extracts brand signals, writes, checks, and renders.
-3. `GET /review/:token` gives the client a private review page.
-4. Approval locks the delivery; a revision re-enters the same controlled pipeline.
+1. `POST /api/intake` accepts the customer brief and optional `sourceFile`. Public applications are stored with status `intake` and do not start paid production or return the review link; the operator confirms fit and payment and clicks **Run production**. Intakes submitted from the authenticated dashboard start immediately. A `referral` field carrying a Campaign Preview token links the application to its prospect.
+2. The in-process queue transcribes, extracts brand signals, writes, checks, and renders. If the quality gate fails (for example a quote that cannot be found in the transcript), the draft is rewritten once with the failed checks as editor notes before the project fails. Guide sections that overflow an A4 page continue on a new page.
+3. `GET /review/:token` gives the client a private review page showing the guide, all eight LinkedIn posts, the three emails, and the landing-page copy.
+4. Approval locks the delivery; the single consolidated revision re-enters the same controlled pipeline. Further revision requests and decisions outside `client-review` are refused. Approvals and revisions notify `ADFORGE_INTAKE_NOTIFY_TO`.
 5. Operators download the finished ZIP from the dashboard or authenticated API.
 
 Authenticated operator routes require `x-adforge-key: <ADFORGE_OPERATOR_KEY>`.
@@ -53,6 +53,8 @@ Authenticated operator routes require `x-adforge-key: <ADFORGE_OPERATOR_KEY>`.
 4. Approve one prospect explicitly with `POST /api/prospects/:id/approve`.
 5. Send with `{ "confirm": true }` to `POST /api/prospects/:id/send`.
 6. Track replies and conversions through `POST /api/prospects/:id/status`.
+
+Opening a sent Campaign Preview is logged on the prospect (views in the first minute after sending are ignored as mail-scanner prefetches) and the first open notifies `ADFORGE_INTAKE_NOTIFY_TO`. Opt-outs go on a do-not-contact list keyed by email address, which blocks later imports, approvals, and sends even under a new source URL. Add an address or a whole domain with `POST /api/suppressions` and `{ "value": "@example.com" }`.
 
 Without `RESEND_API_KEY` and `ADFORGE_OUTREACH_FROM`, step five performs a safe dry run. When configured, it sends through Resend with an idempotency key and unsubscribe headers. The engine never discovers or guesses personal email addresses; import only business contacts you are permitted to approach, respect regional marketing rules, and honor suppression immediately.
 

@@ -47,6 +47,9 @@ export async function renderArtifacts(project: Project): Promise<NonNullable<Pro
   try {
     const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });
     await page.setContent(ebookHtml, { waitUntil: 'networkidle' });
+    // tsx (npm run dev) wraps named inner functions in __name(); define it in the page as a no-op.
+    await page.evaluate('globalThis.__name ??= (fn) => fn');
+    await page.evaluate(flowOverflowingSections);
     const overflows = await page.locator('.page').evaluateAll((pages) => pages.map((element, index) => ({ index, overflow: element.scrollHeight - element.clientHeight })).filter((item) => item.overflow > 2));
     if (overflows.length) throw new Error(`PDF layout overflow detected on pages: ${overflows.map((item) => item.index + 1).join(', ')}`);
     await page.pdf({ path: pdfPath, format: 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
@@ -57,6 +60,48 @@ export async function renderArtifacts(project: Project): Promise<NonNullable<Pro
   const zipPath = path.join(directory, 'afterword-delivery.zip');
   await zipDirectory(directory, zipPath);
   return { pdf: pdfPath, landingPage: landingPath, deliveryZip: zipPath };
+}
+
+/**
+ * Runs in the browser. Moves trailing paragraphs (and the pull quote) of any overflowing
+ * guide section onto a continuation page, then renumbers the numeric folios.
+ */
+export function flowOverflowingSections(): void {
+  const overflows = (element: Element) => element.scrollHeight - element.clientHeight > 2;
+  for (let index = 0; index < document.querySelectorAll('.page').length; index += 1) {
+    const page = document.querySelectorAll('.page')[index];
+    if (!page || !overflows(page)) continue;
+    const body = page.querySelector('.body-copy');
+    if (!body) continue;
+    let continuation: HTMLElement | undefined;
+    const continuationBody = () => {
+      if (!continuation) {
+        continuation = document.createElement('section');
+        continuation.className = 'page content continued';
+        const heading = document.createElement('div');
+        heading.className = 'eyebrow';
+        heading.textContent = `${page.querySelector('h2')?.textContent ?? ''} (continued)`;
+        continuation.append(heading);
+        const nextBody = document.createElement('div');
+        nextBody.className = 'body-copy';
+        nextBody.style.marginTop = '8mm';
+        continuation.append(nextBody);
+        const folio = page.querySelector('.folio')?.cloneNode(true);
+        if (folio) continuation.append(folio);
+        page.after(continuation);
+      }
+      return continuation.querySelector('.body-copy') as HTMLElement;
+    };
+    const quote = page.querySelector('blockquote');
+    if (quote && overflows(page)) continuationBody().after(quote);
+    while (overflows(page) && body.children.length > 1 && body.lastElementChild) {
+      continuationBody().prepend(body.lastElementChild);
+    }
+  }
+  document.querySelectorAll('.page').forEach((page, index) => {
+    const folio = page.querySelector('.folio b');
+    if (folio && /^\d+$/.test(folio.textContent ?? '')) folio.textContent = String(index + 1).padStart(2, '0');
+  });
 }
 
 function normalizeTypography(value: string): string {

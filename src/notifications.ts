@@ -40,11 +40,21 @@ export async function sendApplicationEmails(project: Project): Promise<{ confirm
         `Audience: ${project.intake.audience}`,
         `Offer: ${project.intake.offer}`,
         `CTA: ${project.intake.callToAction}`,
+        ...(project.intake.referral ? [`Campaign Preview reference: ${project.intake.referral}`] : []),
+        '',
+        'Public applications do not start production automatically. Confirm fit and payment, then click Run production in the dashboard.',
       ].join('\n'),
       idempotencyKey: `afterword-intake-operator-${project.id}`,
     });
   }
   return { confirmation: true, operator: Boolean(config.intakeNotifyTo) };
+}
+
+/** Best-effort operator alert; silently skipped when email is not configured. */
+export async function notifyOperator(subject: string, lines: string[], idempotencyKey: string): Promise<boolean> {
+  if (!config.resendKey || !config.intakeFrom || !config.intakeNotifyTo) return false;
+  await send({ to: config.intakeNotifyTo, subject, text: lines.join('\n'), idempotencyKey });
+  return true;
 }
 
 async function send(input: { to: string; subject: string; idempotencyKey: string; html?: string; text?: string }): Promise<void> {

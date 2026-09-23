@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import OpenAI from 'openai';
 import { config } from './config.js';
+import { MAX_TRANSCRIPT_CHARS } from './quality.js';
 import {
   campaignBundleSchema,
   prospectPreviewSchema,
@@ -88,8 +89,8 @@ export async function generateCampaign(intake: Intake, brand: BrandProfile, tran
   const response = await client.responses.create({
     model: config.contentModel,
     store: false,
-    instructions: `You are the senior B2B editor inside Afterword. Turn source expertise into one coherent, commercially useful campaign. Preserve the speaker's point of view. Never invent statistics, customers, quotes, or outcomes. Every direct quote and factual claim must include a source timestamp. Use clear international English. Avoid AI clichés, inflated claims, and repetitive hooks. The result must feel edited, not summarized.`,
-    input: `CLIENT\nCompany: ${intake.companyName}\nAudience: ${intake.audience}\nOffer: ${intake.offer}\nCTA: ${intake.callToAction}\nTone notes: ${intake.toneNotes || 'Clear, expert, direct'}\n\nBRAND SIGNALS\n${JSON.stringify(brand)}\n\nREVISION NOTE\n${revisionNote || 'First edition'}\n\nSOURCE TRANSCRIPT\n${transcript.slice(0, 180_000)}`,
+    instructions: `You are the senior B2B editor inside Afterword. Turn source expertise into one coherent, commercially useful campaign. Preserve the speaker's point of view. Never invent statistics, customers, quotes, or outcomes. Every direct quote and factual claim must include a source timestamp. Quotes (sourceReferences.quote and pullQuote) must be copied verbatim from the transcript; they are checked automatically and the delivery is blocked if a quote cannot be found. Each guide section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Use clear international English. Avoid AI clichés, inflated claims, and repetitive hooks. The result must feel edited, not summarized.`,
+    input: `CLIENT\nCompany: ${intake.companyName}\nAudience: ${intake.audience}\nOffer: ${intake.offer}\nCTA: ${intake.callToAction}\nTone notes: ${intake.toneNotes || 'Clear, expert, direct'}\n\nBRAND SIGNALS\n${JSON.stringify(brand)}\n\nREVISION NOTE\n${revisionNote || 'First edition'}\n\nSOURCE TRANSCRIPT\n${transcript.slice(0, MAX_TRANSCRIPT_CHARS)}`,
     text: { format: { type: 'json_schema', name: 'adforge_campaign_bundle', strict: true, schema: bundleJsonSchema } },
   });
   if (!response.output_text) throw new Error('The content model returned no output');
@@ -125,6 +126,11 @@ export async function generateProspectPreview(
   };
 }
 
+function demoPullQuote(transcript: string): string | undefined {
+  const line = transcript.split('\n').map((row) => row.replace(/^\s*\[[^\]]*\]\s*[^:]{0,40}:\s*/, '').trim()).find((row) => row.length > 20);
+  return line?.split(/(?<=[.!?])\s+/)[0];
+}
+
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
   const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
@@ -144,7 +150,7 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
     eyebrow: `Principle ${String(index + 1).padStart(2, '0')}`,
     title,
     body: [body, `This section is generated in demo mode from the project brief. Connect an OpenAI API key to ground the final editorial version in the full source transcript.`],
-    pullQuote: index === 0 ? 'Expertise becomes valuable when a buyer can recognize their own decision inside it.' : undefined,
+    pullQuote: index === 0 ? demoPullQuote(transcript) : undefined,
     sourceTimestamp: transcript ? `[demo ${index + 1}:00]` : undefined,
   }));
   const hooks = [
@@ -162,7 +168,7 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
     linkedinPosts: hooks.map((hook, index) => ({ hook, body: `${sections[index % sections.length]?.body[0]}\n\nThe point is not to publish more. It is to make one valuable idea easier to understand and use.`, cta: index > 5 ? intake.callToAction : 'What does this look like inside your team?' })),
     emails: [0, 1, 2].map((index) => ({ subject: [`Your guide is ready`, `The idea worth revisiting`, `A practical next step`][index] ?? 'A useful follow-up', preview: `A concise note from ${intake.companyName}.`, body: `${sections[index]?.body[0]}\n\nThe guide develops the full argument with a practical checklist.`, cta: intake.callToAction })),
     landingPage: { eyebrow: `A practical guide from ${intake.companyName}`, headline: `Make ${topic.toLowerCase()} easier to act on`, subheadline: `A focused guide for ${intake.audience}, built from real expert insight.`, bullets: ['A clearer view of the core constraint', 'A practical framework for action', 'A checklist you can use with your team'], formHeading: 'Get the guide', buttonLabel: 'Send me the guide' },
-    sourceReferences: transcript ? [{ claim: 'Primary campaign thesis', quote: transcript.slice(0, 180), speaker: 'Source speaker', timestamp: '00:00' }] : [],
+    sourceReferences: transcript ? [{ claim: 'Primary campaign thesis', quote: demoPullQuote(transcript) ?? transcript.slice(0, 180), speaker: 'Source speaker', timestamp: '00:00' }] : [],
   };
 }
 

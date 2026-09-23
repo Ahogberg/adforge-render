@@ -27,6 +27,7 @@ export const intakeSchema = z.object({
   callToAction: z.string().trim().min(3).max(500),
   toneNotes: z.string().trim().max(1500).optional().default(''),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#E8C97A'),
+  referral: z.string().trim().max(100).optional().default(''),
 });
 
 export const sourceReferenceSchema = z.object({
@@ -115,6 +116,8 @@ export interface Project {
   };
   events: ProjectEvent[];
   revisionNote?: string;
+  revisionCount?: number;
+  prospectId?: string;
   error?: string;
   mode: 'live' | 'demo';
 }
@@ -199,6 +202,9 @@ export interface Prospect {
   providerMessageId?: string;
   replyNote?: string;
   conversionValue?: number;
+  previewViews?: number;
+  previewFirstViewedAt?: string;
+  appliedProjectId?: string;
   error?: string;
   events: ProspectEvent[];
 }

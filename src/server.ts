@@ -9,15 +9,15 @@ import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { closeBrowser } from './brand.js';
 import { config } from './config.js';
-import { sendApplicationEmails } from './notifications.js';
+import { notifyOperator, sendApplicationEmails } from './notifications.js';
 import { sendProspectEmail } from './outreach.js';
 import { ProductionPipeline } from './pipeline.js';
 import { ProspectEngine } from './prospect-engine.js';
 import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview.js';
-import { ProspectStore } from './prospect-store.js';
-import { renderReviewPage } from './review.js';
+import { ProspectStore, SuppressedContactError } from './prospect-store.js';
+import { CLIENT_REVISION_ROUNDS, renderReviewPage } from './review.js';
 import { ProjectStore } from './store.js';
-import { intakeSchema, prospectInputSchema, prospectStatusSchema, type ProspectInput } from './types.js';
+import { intakeSchema, prospectInputSchema, prospectStatusSchema, type Project, type ProspectInput } from './types.js';
 
 mkdirSync(config.uploadDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
@@ -58,11 +58,20 @@ export async function createApp() {
   const intakeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
   app.post('/api/intake', intakeLimiter, upload.single('sourceFile'), asyncHandler(async (request, response) => {
     const intake = intakeSchema.parse(normalizeIntake(request.body));
-    const project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
-    if (request.file) await store.update(project.id, { sourceFile: request.file.path });
-    pipeline.enqueue(project.id);
+    let project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
+    if (request.file) project = await store.update(project.id, { sourceFile: request.file.path });
+    project = await linkReferral(project);
+    // Public applications wait for the operator to confirm fit and payment before any paid
+    // production runs. Only the authenticated dashboard starts production immediately.
+    const operator = isOperator(request);
+    if (operator) {
+      await store.setStatus(project.id, 'queued', 8, 'Project queued by operator');
+      pipeline.enqueue(project.id);
+    }
     void sendApplicationEmails(project).catch((error: unknown) => console.error('Application email failed:', error));
-    response.status(202).json({ projectId: project.id, status: 'queued', reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` });
+    response.status(202).json(operator
+      ? { projectId: project.id, status: 'queued', reviewUrl: `${config.publicUrl}/review/${project.reviewToken}` }
+      : { projectId: project.id, status: 'received' });
   }));
 
   app.get('/review/:token', asyncHandler(async (request, response) => {
@@ -74,22 +83,30 @@ export async function createApp() {
   app.post('/api/review/:token', intakeLimiter, asyncHandler(async (request, response) => {
     const project = (await store.list()).find((item) => item.reviewToken === request.params.token);
     if (!project) return response.status(404).send('Project not found');
+    if (project.status !== 'client-review') {
+      return response.status(409).send(successPage('Nothing to decide right now', project.status === 'approved' ? 'This campaign is already approved and locked.' : 'Your campaign is being updated. We will email you when it is ready to review.'));
+    }
     const decision = request.body.decision === 'approve' ? 'approve' : 'revise';
     if (decision === 'approve') {
       await store.update(project.id, { status: 'approved' }, { type: 'approval', message: 'Client approved the campaign' });
+      alertOperator(`Approved · ${project.intake.companyName}`, [`${project.intake.contactName} approved the campaign.`, `Dashboard: ${config.publicUrl}/`], `afterword-client-approved-${project.id}`);
       return response.send(successPage('Campaign approved', 'The final delivery is locked. Afterword has been notified.'));
     }
+    const revisionsUsed = project.revisionCount ?? 0;
+    if (revisionsUsed >= CLIENT_REVISION_ROUNDS) return response.status(409).send(successPage('Revision round used', 'This month includes one consolidated revision. Approve the campaign, or reply to our email if a factual error remains.'));
     const note = String(request.body.note || '').trim();
     if (note.length < 3) return response.status(400).send('Please include the requested changes.');
-    await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Client submitted consolidated revision notes' });
+    await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note, revisionCount: revisionsUsed + 1 }, { type: 'note', message: 'Client submitted consolidated revision notes' });
     pipeline.enqueue(project.id);
-    return response.send(successPage('Revision received', 'The requested changes have entered the production queue.'));
+    alertOperator(`Revision requested · ${project.intake.companyName}`, [`${project.intake.contactName} requested the consolidated revision:`, '', note], `afterword-client-revision-${project.id}-${revisionsUsed + 1}`);
+    return response.send(successPage('Revision received', 'The requested changes have entered the production queue. We will email you when the revised campaign is ready.'));
   }));
 
   app.get('/preview/:token', asyncHandler(async (request, response) => {
     const prospect = await prospectStore.findByToken(param(request, 'token'));
     if (!prospect || !prospect.preview || !prospect.qualification) return response.status(404).send('Campaign Preview is not available.');
     response.type('html').send(renderProspectPreview(prospect));
+    void recordPreviewView(prospect.id).catch((error: unknown) => console.error('Preview view tracking failed:', error));
   }));
 
   app.get('/unsubscribe/:token', asyncHandler(async (request, response) => {
@@ -101,7 +118,8 @@ export async function createApp() {
   app.post('/api/unsubscribe/:token', express.urlencoded({ extended: false }), asyncHandler(async (request, response) => {
     const prospect = await prospectStore.findByToken(param(request, 'token'));
     if (!prospect) return response.status(404).send('This preference link is not available.');
-    await prospectStore.update(prospect.id, { status: 'unsubscribed' }, { type: 'status', message: 'Contact opted out of outreach' });
+    if (prospect.input.contactEmail) await prospectStore.suppress(prospect.input.contactEmail, 'Contact opted out of outreach');
+    if (prospect.status !== 'unsubscribed') await prospectStore.update(prospect.id, { status: 'unsubscribed' }, { type: 'status', message: 'Contact opted out of outreach' });
     response.type('html').send(renderUnsubscribePage(prospect.input.companyName));
   }));
 
@@ -109,7 +127,11 @@ export async function createApp() {
   app.get('/api/prospects', asyncHandler(async (_request, response) => response.json(await prospectStore.list())));
   app.post('/api/prospects', asyncHandler(async (request, response) => {
     const input = prospectInputSchema.parse(request.body);
-    response.status(201).json(await prospectStore.create(input, config.openaiKey ? 'live' : 'demo'));
+    try { response.status(201).json(await prospectStore.create(input, config.openaiKey ? 'live' : 'demo')); }
+    catch (error) {
+      if (error instanceof SuppressedContactError) return response.status(409).json({ error: error.message });
+      throw error;
+    }
   }));
   app.post('/api/prospects/import', csvUpload.single('file'), asyncHandler(async (request, response) => {
     const rows = request.file
@@ -119,7 +141,7 @@ export async function createApp() {
     if (rows.length > 500) return response.status(400).json({ error: 'Import is limited to 500 prospects per batch' });
     const inputs = rows.map((row) => prospectInputSchema.parse(normalizeProspectRow(row)));
     const result = await prospectStore.createMany(inputs, config.openaiKey ? 'live' : 'demo');
-    response.status(201).json({ created: result.created.length, duplicates: result.duplicates, prospectIds: result.created.map((item) => item.id) });
+    response.status(201).json({ created: result.created.length, duplicates: result.duplicates, suppressed: result.suppressed, prospectIds: result.created.map((item) => item.id) });
   }));
   app.post('/api/prospects/batch/generate', asyncHandler(async (request, response) => {
     const requested = Array.isArray(request.body.ids) ? request.body.ids.map(String) : [];
@@ -153,7 +175,7 @@ export async function createApp() {
     const id = param(request, 'id');
     const prospect = await prospectStore.get(id);
     if (!prospect?.preview) return response.status(409).json({ error: 'Campaign Preview must be generated before approval' });
-    if (prospect.status === 'unsubscribed') return response.status(409).json({ error: 'This contact has opted out' });
+    if (prospect.status === 'unsubscribed' || await prospectStore.isSuppressed(prospect.input.contactEmail)) return response.status(409).json({ error: 'This contact has opted out' });
     response.json(await prospectStore.update(id, { status: 'approved', approvedAt: new Date().toISOString() }, { type: 'status', message: 'Outreach approved by operator' }));
   }));
   app.post('/api/prospects/:id/send', asyncHandler(async (request, response) => {
@@ -161,6 +183,7 @@ export async function createApp() {
     const id = param(request, 'id');
     const prospect = await prospectStore.get(id);
     if (!prospect) return response.status(404).json({ error: 'Prospect not found' });
+    if (await prospectStore.isSuppressed(prospect.input.contactEmail)) return response.status(409).json({ error: 'This contact is on the do-not-contact list' });
     const result = await sendProspectEmail(prospect);
     if (result.dryRun) {
       await prospectStore.update(id, {}, { type: 'email', message: 'Dry-run passed; configure the email provider to send' });
@@ -174,6 +197,12 @@ export async function createApp() {
     const note = String(request.body.note || '').trim();
     const conversionValue = status === 'won' ? Number(request.body.conversionValue || 1500) : undefined;
     response.json(await prospectStore.update(param(request, 'id'), { status, replyNote: note || undefined, conversionValue }, { type: status === 'won' ? 'conversion' : 'status', message: note || `Prospect marked ${status}` }));
+  }));
+
+  app.get('/api/suppressions', operatorOnly, asyncHandler(async (_request, response) => response.json(await prospectStore.listSuppressions())));
+  app.post('/api/suppressions', operatorOnly, asyncHandler(async (request, response) => {
+    const value = String(request.body.value || '');
+    response.status(201).json(await prospectStore.suppress(value, `Added to do-not-contact list (${value.trim().toLowerCase()})`));
   }));
 
   app.use('/api/projects', operatorOnly);
@@ -223,15 +252,40 @@ export async function createApp() {
   return app;
 }
 
+function isOperator(request: Request): boolean {
+  const suppliedBytes = Buffer.from(request.header('x-adforge-key') || '');
+  const expectedBytes = Buffer.from(config.operatorKey);
+  return suppliedBytes.length === expectedBytes.length && timingSafeEqual(suppliedBytes, expectedBytes);
+}
+
 function operatorOnly(request: Request, response: Response, next: NextFunction): void {
-  const supplied = request.header('x-adforge-key') || '';
-  const expected = config.operatorKey;
-  const suppliedBytes = Buffer.from(supplied);
-  const expectedBytes = Buffer.from(expected);
-  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
-    response.status(401).json({ error: 'Operator authentication required' }); return;
-  }
+  if (!isOperator(request)) { response.status(401).json({ error: 'Operator authentication required' }); return; }
   next();
+}
+
+function alertOperator(subject: string, lines: string[], idempotencyKey: string): void {
+  void notifyOperator(subject, lines, idempotencyKey).catch((error: unknown) => console.error('Operator notification failed:', error));
+}
+
+/** Connects an application that came from a Campaign Preview back to its prospect. */
+async function linkReferral(project: Project): Promise<Project> {
+  const token = project.intake.referral;
+  if (!token) return project;
+  const prospect = await prospectStore.findByToken(token);
+  if (!prospect) return project;
+  const status = ['won', 'lost', 'unsubscribed'].includes(prospect.status) ? prospect.status : 'qualified';
+  await prospectStore.update(prospect.id, { status, appliedProjectId: project.id }, { type: 'conversion', message: `Applied through the Campaign Preview (project ${project.id.slice(0, 8)})` });
+  return store.update(project.id, { prospectId: prospect.id }, { type: 'note', message: `Applied from the Campaign Preview sent to ${prospect.input.companyName}` });
+}
+
+/** Ignores views before sending and the first minute after, when mail scanners prefetch links. */
+async function recordPreviewView(prospectId: string): Promise<void> {
+  const prospect = await prospectStore.get(prospectId);
+  if (!prospect?.sentAt || Date.now() - Date.parse(prospect.sentAt) < 60_000) return;
+  const views = (prospect.previewViews ?? 0) + 1;
+  const first = views === 1;
+  await prospectStore.update(prospectId, { previewViews: views, previewFirstViewedAt: prospect.previewFirstViewedAt ?? new Date().toISOString() }, first ? { type: 'note', message: 'Campaign Preview opened for the first time' } : undefined);
+  if (first) alertOperator(`Preview opened · ${prospect.input.companyName}`, [`${prospect.input.contactName || 'The contact'} (${prospect.input.contactEmail}) opened their Campaign Preview.`, `Preview: ${config.publicUrl}/preview/${prospect.previewToken}`], `afterword-preview-opened-${prospect.id}`);
 }
 
 function normalizeIntake(body: Record<string, unknown>): Record<string, unknown> {
