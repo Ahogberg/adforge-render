@@ -39,11 +39,16 @@ For live projects, set `OPENAI_API_KEY`. The content and transcription model nam
 
 1. `POST /api/intake` accepts the customer brief and optional `sourceFile`. Public applications are stored with status `intake` and do not start paid production or return the review link; the operator confirms fit and payment and clicks **Run production**. Intakes submitted from the authenticated dashboard start immediately. A `referral` field carrying a Campaign Preview token links the application to its prospect.
 2. The in-process queue transcribes, extracts brand signals, writes, checks, and renders. If the quality gate fails (for example a quote that cannot be found in the transcript), the draft is rewritten once with the failed checks as editor notes before the project fails. Guide sections that overflow an A4 page continue on a new page.
+   Writing runs in stages: extract ideas and verbatim quotes from the full transcript, choose one thesis and plan, write the guide, derive the LinkedIn posts, emails, and landing copy from the guide in the expert's first-person voice, then an editor pass. A failed quality gate triggers one targeted repair pass instead of a full rewrite.
 3. `GET /review/:token` gives the client a private review page showing the guide, all eight LinkedIn posts, the three emails, and the landing-page copy.
 4. Approval locks the delivery; the single consolidated revision re-enters the same controlled pipeline. Further revision requests and decisions outside `client-review` are refused. Approvals and revisions notify `ADFORGE_INTAKE_NOTIFY_TO`.
 5. Operators download the finished ZIP from the dashboard or authenticated API.
 
 Authenticated operator routes require `x-adforge-key: <ADFORGE_OPERATOR_KEY>`.
+
+## Brand memory
+
+Each client company (keyed by website domain) has a reusable memory that is sent into every run: the expert's own posts as the voice reference (`expertName` and `voiceExamples` on intake, posts separated by `---`), terminology rules, banned phrases, style notes, the angles and hooks of approved months (so they are not repeated), and past revision notes. When a client requests a revision, durable preferences are distilled from the note into memory automatically. A banned phrase anywhere in a campaign blocks delivery; stock AI phrasing is flagged as a warning. Operators view and edit memory from the project detail in the dashboard or through `GET /api/clients` and `PUT /api/clients/:id/memory`.
 
 ## Prospect flow
 

@@ -8,6 +8,8 @@ import {
   prospectQualificationSchema,
   type BrandProfile,
   type CampaignBundle,
+  type Client,
+  type ClientMemory,
   type Intake,
   type ProspectInput,
   type ProspectPreview,
@@ -32,6 +34,64 @@ const bundleJsonSchema = {
       eyebrow: { type: 'string' }, headline: { type: 'string' }, subheadline: { type: 'string' }, bullets: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } }, formHeading: { type: 'string' }, buttonLabel: { type: 'string' },
     } },
     sourceReferences: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false, required: ['claim', 'quote', 'speaker', 'timestamp'], properties: { claim: { type: 'string' }, quote: { type: 'string' }, speaker: { type: 'string' }, timestamp: { type: 'string' } } } },
+  },
+} as const;
+
+const quoteJsonSchema = { type: 'object', additionalProperties: false, required: ['quote', 'speaker', 'timestamp'], properties: { quote: { type: 'string' }, speaker: { type: 'string' }, timestamp: { type: 'string' } } } as const;
+
+const ideasJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['thesisCandidates', 'ideas', 'speakerTerms'],
+  properties: {
+    thesisCandidates: { type: 'array', minItems: 2, maxItems: 4, items: { type: 'string' } },
+    ideas: { type: 'array', minItems: 5, maxItems: 14, items: { type: 'object', additionalProperties: false, required: ['number', 'idea', 'detail', 'quotes'], properties: {
+      number: { type: 'integer' }, idea: { type: 'string' }, detail: { type: 'string' }, quotes: { type: 'array', maxItems: 4, items: quoteJsonSchema },
+    } } },
+    speakerTerms: { type: 'array', maxItems: 20, items: { type: 'string' } },
+  },
+} as const;
+
+const planJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['thesis', 'campaignAngle', 'title', 'subtitle', 'sections', 'postAngles', 'emailPlan'],
+  properties: {
+    thesis: { type: 'string' }, campaignAngle: { type: 'string' }, title: { type: 'string' }, subtitle: { type: 'string' },
+    sections: { type: 'array', minItems: 4, maxItems: 7, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'point', 'ideaNumbers'], properties: {
+      eyebrow: { type: 'string' }, title: { type: 'string' }, point: { type: 'string' }, ideaNumbers: { type: 'array', items: { type: 'integer' } },
+    } } },
+    postAngles: { type: 'array', minItems: 8, maxItems: 8, items: { type: 'object', additionalProperties: false, required: ['angle', 'ideaNumber'], properties: { angle: { type: 'string' }, ideaNumber: { type: 'integer' } } } },
+    emailPlan: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'object', additionalProperties: false, required: ['job', 'focus'], properties: { job: { type: 'string', enum: ['deliver', 'develop', 'invite'] }, focus: { type: 'string' } } } },
+  },
+} as const;
+
+const guideJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['executiveSummary', 'sections', 'actionChecklist', 'sourceReferences'],
+  properties: {
+    executiveSummary: bundleJsonSchema.properties.executiveSummary,
+    sections: bundleJsonSchema.properties.sections,
+    actionChecklist: bundleJsonSchema.properties.actionChecklist,
+    sourceReferences: bundleJsonSchema.properties.sourceReferences,
+  },
+} as const;
+
+const derivativesJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['linkedinPosts', 'emails', 'landingPage'],
+  properties: {
+    linkedinPosts: bundleJsonSchema.properties.linkedinPosts,
+    emails: bundleJsonSchema.properties.emails,
+    landingPage: bundleJsonSchema.properties.landingPage,
+  },
+} as const;
+
+const lessonsJsonSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['terminology', 'bannedPhrases', 'styleNotes'],
+  properties: {
+    terminology: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    bannedPhrases: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    styleNotes: { type: 'array', maxItems: 10, items: { type: 'string' } },
   },
 } as const;
 
@@ -84,18 +144,120 @@ export async function transcribeFile(filePath: string): Promise<string> {
   return 'text' in response ? String(response.text) : JSON.stringify(response);
 }
 
-export async function generateCampaign(intake: Intake, brand: BrandProfile, transcript: string, revisionNote = ''): Promise<CampaignBundle> {
-  if (!client) return createDemoBundle(intake, transcript, revisionNote);
+export interface CampaignContext {
+  intake: Intake;
+  brand: BrandProfile;
+  transcript: string;
+  revisionNote?: string;
+  client?: Client;
+  /** Called before each writing stage so the operator can follow progress. */
+  onStage?: (message: string) => Promise<unknown>;
+}
+
+const SOURCE_RULES = `Never invent statistics, customers, quotes, results, or opinions. Quotes must be copied verbatim from the transcript, with the transcript timestamp; they are verified automatically and the delivery is blocked if a quote cannot be found.`;
+const STYLE_RULES = `Use clear international English. Write like a senior practitioner, not a marketer. No AI clichés (for example "in today's fast-paced world", "game-changer", "unlock", "delve", "navigate the complexities", "let's dive in", "it's not just X, it's Y"). No inflated claims, no exclamation marks, no emoji, no hashtags inside sentences.`;
+
+/**
+ * Staged editorial pipeline: extract ideas and verbatim quotes, choose one thesis and plan,
+ * write the guide, derive posts, emails and landing copy from the guide, then run an editor pass.
+ */
+export async function generateCampaign(context: CampaignContext): Promise<CampaignBundle> {
+  if (!client) return createDemoBundle(context.intake, context.transcript, context.revisionNote ?? '');
+  const stage = async (message: string) => { await context.onStage?.(message); };
+  const brief = clientBrief(context);
+
+  await stage('Extracting ideas and verbatim quotes from the source');
+  const ideas = await structured<unknown>('adforge_source_ideas', ideasJsonSchema,
+    `You are the research editor inside Afterword. Read the full transcript and extract the ideas worth publishing, in the speaker's own framing. ${SOURCE_RULES} Prefer specific, contrarian, or experience-based points over generic advice. Record the speaker's own recurring terms.`,
+    `${brief}\n\nSOURCE TRANSCRIPT\n${context.transcript.slice(0, MAX_TRANSCRIPT_CHARS)}`);
+
+  await stage('Choosing one thesis and planning the campaign');
+  const plan = await structured<{ campaignAngle: string; title: string; subtitle: string }>('adforge_campaign_plan', planJsonSchema,
+    `You are the senior B2B editor inside Afterword. Choose ONE central thesis that is useful to the audience and naturally supports the client's offer without becoming a brochure. Plan a guide of 4 to 7 sections that builds one argument, eight LinkedIn angles that each carry a different idea, and three emails with the jobs deliver, develop, invite. Do not repeat angles or hooks from past campaigns. Honour every client rule and correction.`,
+    `${brief}\n\nEXTRACTED IDEAS\n${JSON.stringify(ideas)}`);
+
+  await stage('Writing the premium guide');
+  const guide = await structured<Record<string, unknown>>('adforge_campaign_guide', guideJsonSchema,
+    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES} Each section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Pull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
+    `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nEXTRACTED IDEAS AND QUOTES\n${JSON.stringify(ideas)}`);
+
+  await stage('Writing LinkedIn posts, emails, and landing copy');
+  const expert = context.client?.expertName || context.intake.expertName || 'the expert speaker';
+  const derived = await structured<Record<string, unknown>>('adforge_campaign_derivatives', derivativesJsonSchema,
+    `You write distribution copy for Afterword. LinkedIn posts and emails are written in the first person as ${expert}, matching the voice reference closely (sentence length, directness, vocabulary, formatting). Each LinkedIn post carries its planned angle, stands alone without the guide, is 120 to 220 words, opens with a specific first line rather than a generic claim, and uses short paragraphs. Emails have one job each (deliver the guide, develop its sharpest idea, invite the next step) and are under 180 words. Landing copy is labelled blocks for a guide download page. ${SOURCE_RULES} ${STYLE_RULES}`,
+    `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nFINISHED GUIDE\n${JSON.stringify(guide)}`);
+
+  const draft = normalizeBundle({ campaignAngle: plan.campaignAngle, title: plan.title, subtitle: plan.subtitle, ...guide, ...derived });
+
+  await stage('Editor pass: voice, repetition, and client rules');
+  return editBundle(context, draft, [
+    'Tighten every asset. Remove repetition across the eight posts, clichés, filler, and anything that sounds generated.',
+    'Enforce every terminology rule and never use a banned phrase.',
+    'Keep verbatim quotes exactly as written. Keep the structure and number of items.',
+  ]);
+}
+
+/** Targeted rewrite after a failed quality gate; far cheaper than regenerating the campaign. */
+export async function repairCampaign(context: CampaignContext, bundle: CampaignBundle, failures: string[]): Promise<CampaignBundle> {
+  if (!client) return bundle;
+  await context.onStage?.('Repairing the draft after a failed quality gate');
+  return editBundle(context, bundle, [
+    'The draft failed automated checks. Fix exactly these problems and change nothing else:',
+    ...failures.map((failure) => `- ${failure}`),
+    'For a quote that could not be found, replace it with a verbatim sentence from the transcript or remove it.',
+  ], true);
+}
+
+/** Distils a client's revision note into durable rules for future months. */
+export async function distilRevision(note: string, memory: ClientMemory): Promise<Pick<ClientMemory, 'terminology' | 'bannedPhrases' | 'styleNotes'>> {
+  if (!client) return { terminology: [], bannedPhrases: [], styleNotes: [] };
+  return structured('adforge_revision_lessons', lessonsJsonSchema,
+    `You maintain a client's editorial memory. From one revision note, extract only durable preferences that should apply to future months: terminology rules ("Say X, not Y"), phrases to never use, and general style notes. Ignore one-off content edits and factual fixes about this month's material. Do not repeat rules already in memory. Return empty arrays when nothing is durable.`,
+    `CURRENT MEMORY\n${JSON.stringify({ terminology: memory.terminology, bannedPhrases: memory.bannedPhrases, styleNotes: memory.styleNotes })}\n\nREVISION NOTE\n${note}`);
+}
+
+async function editBundle(context: CampaignContext, bundle: CampaignBundle, tasks: string[], includeTranscript = false): Promise<CampaignBundle> {
+  const edited = await structured<unknown>('adforge_campaign_bundle', bundleJsonSchema,
+    `You are the final editor inside Afterword. Return the complete campaign in the same structure. ${SOURCE_RULES} ${STYLE_RULES}`,
+    `${clientBrief(context)}\n\nEDITOR TASKS\n${tasks.join('\n')}\n\nCAMPAIGN\n${JSON.stringify(bundle)}${includeTranscript ? `\n\nSOURCE TRANSCRIPT\n${context.transcript.slice(0, MAX_TRANSCRIPT_CHARS)}` : ''}`);
+  return normalizeBundle(edited);
+}
+
+function clientBrief(context: CampaignContext): string {
+  const { intake, brand, revisionNote } = context;
+  const memory = context.client?.memory;
+  const campaigns = context.client?.campaigns.slice(-6) ?? [];
+  const corrections = context.client?.corrections.slice(-10) ?? [];
+  const voice = memory?.voiceExamples.length ? memory.voiceExamples : [];
+  const list = (items: string[] | undefined, empty: string) => items?.length ? items.map((item) => `- ${item}`).join('\n') : empty;
+  return [
+    `CLIENT\nCompany: ${intake.companyName}\nExpert: ${context.client?.expertName || intake.expertName || 'The main speaker in the source'}\nAudience: ${intake.audience}\nOffer: ${intake.offer}\nCTA: ${intake.callToAction}\nTone notes: ${intake.toneNotes || 'Clear, expert, direct'}`,
+    `VOICE REFERENCE (the expert's own writing; match it)\n${voice.length ? voice.map((example, index) => `[Example ${index + 1}]\n${example}`).join('\n\n') : 'No examples supplied. Write plainly in the first person as a senior practitioner.'}`,
+    `TERMINOLOGY RULES\n${list(memory?.terminology, 'None yet.')}`,
+    `BANNED PHRASES (never use)\n${list(memory?.bannedPhrases, 'None yet.')}`,
+    `STYLE NOTES FROM EARLIER REVIEWS\n${list(memory?.styleNotes, 'None yet.')}`,
+    `PAST CAMPAIGNS (do not repeat these angles or hooks)\n${campaigns.length ? campaigns.map((item) => `- ${item.approvedAt.slice(0, 7)}: ${item.campaignAngle} | hooks: ${item.hooks.slice(0, 8).join(' / ')}`).join('\n') : 'None; this is the first month.'}`,
+    `PAST CLIENT CORRECTIONS\n${corrections.length ? corrections.map((item) => `- ${item.note.slice(0, 600)}`).join('\n') : 'None.'}`,
+    `COMPANY WEBSITE COPY (terminology and offer reference only; not the voice)\n${brand.description}\n${brand.voiceSample.slice(0, 2_000)}`,
+    `REVISION NOTE FOR THIS EDITION\n${revisionNote || 'First edition'}`,
+  ].join('\n\n');
+}
+
+async function structured<T>(name: string, schema: object, instructions: string, input: string): Promise<T> {
+  if (!client) throw new Error('Structured generation requires OPENAI_API_KEY');
   const response = await client.responses.create({
     model: config.contentModel,
     store: false,
-    instructions: `You are the senior B2B editor inside Afterword. Turn source expertise into one coherent, commercially useful campaign. Preserve the speaker's point of view. Never invent statistics, customers, quotes, or outcomes. Every direct quote and factual claim must include a source timestamp. Quotes (sourceReferences.quote and pullQuote) must be copied verbatim from the transcript; they are checked automatically and the delivery is blocked if a quote cannot be found. Each guide section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Use clear international English. Avoid AI clichés, inflated claims, and repetitive hooks. The result must feel edited, not summarized.`,
-    input: `CLIENT\nCompany: ${intake.companyName}\nAudience: ${intake.audience}\nOffer: ${intake.offer}\nCTA: ${intake.callToAction}\nTone notes: ${intake.toneNotes || 'Clear, expert, direct'}\n\nBRAND SIGNALS\n${JSON.stringify(brand)}\n\nREVISION NOTE\n${revisionNote || 'First edition'}\n\nSOURCE TRANSCRIPT\n${transcript.slice(0, MAX_TRANSCRIPT_CHARS)}`,
-    text: { format: { type: 'json_schema', name: 'adforge_campaign_bundle', strict: true, schema: bundleJsonSchema } },
+    instructions,
+    input,
+    text: { format: { type: 'json_schema', name, strict: true, schema: schema as Record<string, unknown> } },
   });
-  if (!response.output_text) throw new Error('The content model returned no output');
-  const parsed = JSON.parse(response.output_text) as unknown;
-  const normalized = campaignBundleSchema.parse(parsed);
+  if (!response.output_text) throw new Error(`The content model returned no output (${name})`);
+  return JSON.parse(response.output_text) as T;
+}
+
+function normalizeBundle(value: unknown): CampaignBundle {
+  const normalized = campaignBundleSchema.parse(value);
   return {
     ...normalized,
     sections: normalized.sections.map((section) => ({

@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { closeBrowser } from './brand.js';
+import { ClientStore } from './client-store.js';
+import { rememberApproval, rememberRevision } from './memory.js';
 import { config } from './config.js';
 import { notifyOperator, sendApplicationEmails } from './notifications.js';
 import { sendProspectEmail } from './outreach.js';
@@ -17,13 +19,14 @@ import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview
 import { ProspectStore, SuppressedContactError } from './prospect-store.js';
 import { CLIENT_REVISION_ROUNDS, renderReviewPage } from './review.js';
 import { ProjectStore } from './store.js';
-import { intakeSchema, prospectInputSchema, prospectStatusSchema, type Project, type ProspectInput } from './types.js';
+import { clientMemorySchema, intakeSchema, prospectInputSchema, prospectStatusSchema, type Project, type ProspectInput } from './types.js';
 
 mkdirSync(config.uploadDir, { recursive: true });
 mkdirSync(config.artifactDir, { recursive: true });
 
 const store = new ProjectStore();
-const pipeline = new ProductionPipeline(store);
+const clientStore = new ClientStore();
+const pipeline = new ProductionPipeline(store, clientStore);
 const prospectStore = new ProspectStore();
 const prospectEngine = new ProspectEngine(prospectStore);
 const upload = multer({
@@ -40,6 +43,7 @@ const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 export async function createApp() {
   await store.initialize();
   await prospectStore.initialize();
+  await clientStore.initialize();
   const app = express();
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
@@ -88,7 +92,8 @@ export async function createApp() {
     }
     const decision = request.body.decision === 'approve' ? 'approve' : 'revise';
     if (decision === 'approve') {
-      await store.update(project.id, { status: 'approved' }, { type: 'approval', message: 'Client approved the campaign' });
+      const approved = await store.update(project.id, { status: 'approved', approvedAt: new Date().toISOString() }, { type: 'approval', message: 'Client approved the campaign' });
+      remember(rememberApproval(clientStore, approved));
       alertOperator(`Approved · ${project.intake.companyName}`, [`${project.intake.contactName} approved the campaign.`, `Dashboard: ${config.publicUrl}/`], `afterword-client-approved-${project.id}`);
       return response.send(successPage('Campaign approved', 'The final delivery is locked. Afterword has been notified.'));
     }
@@ -97,6 +102,7 @@ export async function createApp() {
     const note = String(request.body.note || '').trim();
     if (note.length < 3) return response.status(400).send('Please include the requested changes.');
     await store.update(project.id, { status: 'revision', progress: 10, revisionNote: note, revisionCount: revisionsUsed + 1 }, { type: 'note', message: 'Client submitted consolidated revision notes' });
+    remember(rememberRevision(clientStore, store, project, note));
     pipeline.enqueue(project.id);
     alertOperator(`Revision requested · ${project.intake.companyName}`, [`${project.intake.contactName} requested the consolidated revision:`, '', note], `afterword-client-revision-${project.id}-${revisionsUsed + 1}`);
     return response.send(successPage('Revision received', 'The requested changes have entered the production queue. We will email you when the revised campaign is ready.'));
@@ -205,6 +211,17 @@ export async function createApp() {
     response.status(201).json(await prospectStore.suppress(value, `Added to do-not-contact list (${value.trim().toLowerCase()})`));
   }));
 
+  app.use('/api/clients', operatorOnly);
+  app.get('/api/clients', asyncHandler(async (_request, response) => response.json(await clientStore.list())));
+  app.get('/api/clients/:id', asyncHandler(async (request, response) => {
+    const client = await clientStore.get(param(request, 'id'));
+    if (!client) return response.status(404).json({ error: 'Client not found' });
+    response.json(client);
+  }));
+  app.put('/api/clients/:id/memory', asyncHandler(async (request, response) => {
+    response.json(await clientStore.replaceMemory(param(request, 'id'), clientMemorySchema.parse(request.body)));
+  }));
+
   app.use('/api/projects', operatorOnly);
   app.get('/api/projects', asyncHandler(async (_request, response) => response.json(await store.list())));
   app.get('/api/projects/:id', asyncHandler(async (request, response) => {
@@ -219,13 +236,16 @@ export async function createApp() {
     response.status(202).json({ status: 'queued' });
   }));
   app.post('/api/projects/:id/approve', asyncHandler(async (request, response) => {
-    response.json(await store.update(param(request, 'id'), { status: 'approved' }, { type: 'approval', message: 'Campaign approved by operator' }));
+    const approved = await store.update(param(request, 'id'), { status: 'approved', approvedAt: new Date().toISOString() }, { type: 'approval', message: 'Campaign approved by operator' });
+    remember(rememberApproval(clientStore, approved));
+    response.json(approved);
   }));
   app.post('/api/projects/:id/revise', asyncHandler(async (request, response) => {
     const note = String(request.body.note || '').trim();
     if (note.length < 3) return response.status(400).json({ error: 'Revision note is required' });
     const id = param(request, 'id');
-    await store.update(id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Operator submitted a consolidated revision' });
+    const revised = await store.update(id, { status: 'revision', progress: 10, revisionNote: note }, { type: 'note', message: 'Operator submitted a consolidated revision' });
+    remember(rememberRevision(clientStore, store, revised, note));
     pipeline.enqueue(id);
     response.status(202).json({ status: 'revision' });
   }));
@@ -263,6 +283,10 @@ function operatorOnly(request: Request, response: Response, next: NextFunction):
   next();
 }
 
+function remember(task: Promise<void>): void {
+  void task.catch((error: unknown) => console.error('Brand memory update failed:', error));
+}
+
 function alertOperator(subject: string, lines: string[], idempotencyKey: string): void {
   void notifyOperator(subject, lines, idempotencyKey).catch((error: unknown) => console.error('Operator notification failed:', error));
 }
@@ -289,7 +313,7 @@ async function recordPreviewView(prospectId: string): Promise<void> {
 }
 
 function normalizeIntake(body: Record<string, unknown>): Record<string, unknown> {
-  return { ...body, transcript: body.transcript || '', toneNotes: body.toneNotes || '', primaryColor: body.primaryColor || '#E8C97A' };
+  return { ...body, transcript: body.transcript || '', toneNotes: body.toneNotes || '', primaryColor: body.primaryColor || '#E8C97A', expertName: body.expertName || '', voiceExamples: body.voiceExamples || '' };
 }
 
 function normalizeProspectRow(row: Record<string, unknown>): Record<string, unknown> {

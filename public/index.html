@@ -63,8 +63,23 @@
         <label>Source file<input name="sourceFile" type="file" accept="audio/*,video/*,.pdf,.ppt,.pptx"></label>
         <label class="wide">Transcript (optional)<textarea name="transcript" placeholder="Paste a transcript, or upload the source recording above."></textarea></label>
         <label class="wide">Tone notes<textarea name="toneNotes" placeholder="Clear, candid, senior, practical..."></textarea></label>
+        <label>Expert name<input name="expertName" placeholder="Who speaks in the source and posts on LinkedIn?"></label>
+        <label class="wide">Expert's own posts (voice reference)<textarea name="voiceExamples" placeholder="Paste 3-5 of the expert's own LinkedIn posts. Separate posts with a line containing ---"></textarea></label>
       </div>
       <div class="dialog-actions"><span>Production starts immediately after intake.</span><button type="submit">Queue project →</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="memory-dialog">
+    <form id="memory-form">
+      <div class="dialog-head"><div><span class="overline">Brand memory</span><h2 id="memory-title">Client memory</h2></div><button type="button" class="close" id="close-memory-dialog">×</button></div>
+      <div class="form-grid">
+        <label class="wide">Terminology rules (one per line)<textarea name="terminology" placeholder="Say clients, not customers"></textarea></label>
+        <label class="wide">Banned phrases (one per line; blocks delivery)<textarea name="bannedPhrases" placeholder="best-in-class"></textarea></label>
+        <label class="wide">Style notes (one per line)<textarea name="styleNotes" placeholder="British spelling"></textarea></label>
+        <label class="wide">Voice examples (separate posts with ---)<textarea name="voiceExamples" style="min-height:200px"></textarea></label>
+      </div>
+      <div class="dialog-actions"><span>Used in every future run for this client. Revision notes add rules automatically.</span><button type="submit">Save memory →</button></div>
     </form>
   </dialog>
 

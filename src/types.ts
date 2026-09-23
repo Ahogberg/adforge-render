@@ -28,6 +28,8 @@ export const intakeSchema = z.object({
   toneNotes: z.string().trim().max(1500).optional().default(''),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#E8C97A'),
   referral: z.string().trim().max(100).optional().default(''),
+  expertName: z.string().trim().max(120).optional().default(''),
+  voiceExamples: z.string().trim().max(15_000).optional().default(''),
 });
 
 export const sourceReferenceSchema = z.object({
@@ -118,6 +120,8 @@ export interface Project {
   revisionNote?: string;
   revisionCount?: number;
   prospectId?: string;
+  clientId?: string;
+  approvedAt?: string;
   error?: string;
   mode: 'live' | 'demo';
 }
@@ -207,4 +211,44 @@ export interface Prospect {
   appliedProjectId?: string;
   error?: string;
   events: ProspectEvent[];
+}
+
+export const clientMemorySchema = z.object({
+  /** Preferred wording, e.g. "Say 'client', never 'customer'". */
+  terminology: z.array(z.string().trim().min(2).max(300)).max(60).default([]),
+  /** Phrases that must never appear in any asset. */
+  bannedPhrases: z.array(z.string().trim().min(2).max(120)).max(60).default([]),
+  /** The expert's own writing, used as the voice reference. */
+  voiceExamples: z.array(z.string().trim().min(20).max(3_000)).max(8).default([]),
+  /** Durable editorial preferences distilled from reviews. */
+  styleNotes: z.array(z.string().trim().min(2).max(400)).max(40).default([]),
+});
+
+export type ClientMemory = z.infer<typeof clientMemorySchema>;
+
+export interface ClientCampaignRecord {
+  projectId: string;
+  approvedAt: string;
+  campaignAngle: string;
+  title: string;
+  hooks: string[];
+}
+
+export interface ClientCorrection {
+  projectId: string;
+  at: string;
+  note: string;
+}
+
+export interface Client {
+  id: string;
+  /** Normalized website hostname; one client per company domain. */
+  domain: string;
+  companyName: string;
+  expertName: string;
+  memory: ClientMemory;
+  campaigns: ClientCampaignRecord[];
+  corrections: ClientCorrection[];
+  createdAt: string;
+  updatedAt: string;
 }

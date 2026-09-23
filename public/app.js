@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {
-  view: 'prospects', projects: [], prospects: [], selected: null,
+  view: 'prospects', projects: [], prospects: [], clients: [], selected: null,
   key: sessionStorage.getItem('adforge-key') || (location.hostname === 'localhost' ? 'local-adforge-demo' : ''),
 };
 
@@ -16,7 +16,7 @@ async function load() {
   try {
     const health = await api('/health');
     $('#engine-mode').textContent = `${health.mode} AI · ${health.outreach} outreach`;
-    [state.projects, state.prospects] = await Promise.all([api('/api/projects'), api('/api/prospects')]);
+    [state.projects, state.prospects, state.clients] = await Promise.all([api('/api/projects'), api('/api/prospects'), api('/api/clients')]);
     const list = currentList();
     if (!state.selected || !list.some((item) => item.id === state.selected)) state.selected = list[0]?.id || null;
     render();
@@ -108,9 +108,32 @@ function renderProjectDetail(item) {
   const quoteCheck = item.quality?.checks.find((check) => check.name === 'Quotes verified against source');
   const deliverables = item.bundle ? [['Premium guide', `${item.bundle.sections.length + 3} pages`], ['LinkedIn posts', item.bundle.linkedinPosts.length], ['Nurture emails', item.bundle.emails.length], ['Landing page', 'Ready'], ['Source references', item.bundle.sourceReferences.length]] : [['Production bundle', 'Generating']];
   const actions = item.artifacts ? `<a href="/api/projects/${item.id}/download/deliveryZip" data-download>Download bundle</a><a href="/review/${item.reviewToken}" target="_blank">Open client review</a><button class="primary" data-approve-project="${item.id}">Approve</button>` : `<button class="primary" data-run="${item.id}">Run production</button>`;
-  $('#detail-panel').innerHTML = `<section class="project-detail"><div class="detail-head"><div><span class="overline">${escapeHtml(item.intake.sourceType)}</span><h2>${escapeHtml(item.intake.companyName)}</h2><p>${escapeHtml(item.bundle?.campaignAngle || item.intake.offer)}</p></div><span class="status-pill">${escapeHtml(item.status)}</span></div><div class="stage-track">${[0,1,2,3,4,5].map((index) => `<i class="stage ${index < completed ? 'done' : ''}"></i>`).join('')}</div><div class="detail-grid"><div class="info-card"><span>Audience</span><strong>${escapeHtml(item.intake.audience)}</strong></div><div class="info-card"><span>Primary CTA</span><strong>${escapeHtml(item.intake.callToAction)}</strong></div><div class="info-card"><span>Quality gate</span><strong>${item.quality ? `${item.quality.score}/100 · ${item.quality.blockers.length ? 'Blocked' : 'Passed'}` : 'Waiting for content'}</strong></div>${item.status === 'intake' ? '<div class="info-card"><span>Next step</span><strong>Confirm fit and payment, then run production</strong></div>' : ''}${item.prospectId ? '<div class="info-card"><span>Lead source</span><strong>Campaign Preview outreach</strong></div>' : ''}${quoteCheck ? `<div class="info-card"><span>Quote check</span><strong>${escapeHtml(quoteCheck.detail)}</strong></div>` : ''}<div class="info-card"><span>Production mode</span><strong>${item.mode === 'live' ? 'Live OpenAI pipeline' : 'Deterministic demo'}</strong></div></div><div class="deliverables">${deliverables.map(([name,count]) => `<div class="deliverable"><span>${name}</span><b>${count}</b></div>`).join('')}</div><div class="actions">${actions}</div>${item.error ? `<p style="color:var(--red)">${escapeHtml(item.error)}</p>` : ''}</section>`;
+  $('#detail-panel').innerHTML = `<section class="project-detail"><div class="detail-head"><div><span class="overline">${escapeHtml(item.intake.sourceType)}</span><h2>${escapeHtml(item.intake.companyName)}</h2><p>${escapeHtml(item.bundle?.campaignAngle || item.intake.offer)}</p></div><span class="status-pill">${escapeHtml(item.status)}</span></div><div class="stage-track">${[0,1,2,3,4,5].map((index) => `<i class="stage ${index < completed ? 'done' : ''}"></i>`).join('')}</div><div class="detail-grid"><div class="info-card"><span>Audience</span><strong>${escapeHtml(item.intake.audience)}</strong></div><div class="info-card"><span>Primary CTA</span><strong>${escapeHtml(item.intake.callToAction)}</strong></div><div class="info-card"><span>Quality gate</span><strong>${item.quality ? `${item.quality.score}/100 · ${item.quality.blockers.length ? 'Blocked' : 'Passed'}` : 'Waiting for content'}</strong></div>${item.status === 'intake' ? '<div class="info-card"><span>Next step</span><strong>Confirm fit and payment, then run production</strong></div>' : ''}${item.prospectId ? '<div class="info-card"><span>Lead source</span><strong>Campaign Preview outreach</strong></div>' : ''}${quoteCheck ? `<div class="info-card"><span>Quote check</span><strong>${escapeHtml(quoteCheck.detail)}</strong></div>` : ''}<div class="info-card"><span>Production mode</span><strong>${item.mode === 'live' ? 'Live OpenAI pipeline' : 'Deterministic demo'}</strong></div></div>${memoryCard(item)}<div class="deliverables">${deliverables.map(([name,count]) => `<div class="deliverable"><span>${name}</span><b>${count}</b></div>`).join('')}</div><div class="actions">${actions}</div>${item.error ? `<p style="color:var(--red)">${escapeHtml(item.error)}</p>` : ''}</section>`;
   bindProjectActions();
 }
+
+function memoryCard(project) {
+  const client = state.clients.find((item) => item.id === project.clientId);
+  if (!client) return '';
+  const { memory } = client;
+  const summary = `${memory.voiceExamples.length} voice examples · ${memory.terminology.length} terms · ${memory.bannedPhrases.length} banned · ${memory.styleNotes.length} style notes · ${client.campaigns.length} approved months`;
+  return `<div class="info-card" style="margin-top:12px;min-height:0"><span>Brand memory · ${escapeHtml(client.domain)}</span><strong>${escapeHtml(summary)}</strong><div class="actions" style="margin-top:12px"><button data-edit-memory="${client.id}">Edit brand memory</button></div></div>`;
+}
+
+function openMemory(clientId) {
+  const client = state.clients.find((item) => item.id === clientId);
+  if (!client) return;
+  const form = $('#memory-form');
+  form.dataset.clientId = client.id;
+  $('#memory-title').textContent = client.companyName;
+  form.terminology.value = client.memory.terminology.join('\n');
+  form.bannedPhrases.value = client.memory.bannedPhrases.join('\n');
+  form.styleNotes.value = client.memory.styleNotes.join('\n');
+  form.voiceExamples.value = client.memory.voiceExamples.join('\n---\n');
+  $('#memory-dialog').showModal();
+}
+
+function lines(value) { return value.split('\n').map((line) => line.trim()).filter((line) => line.length >= 2); }
 
 function renderActivity(item) { $('#activity').innerHTML = item ? [...item.events].reverse().map((event) => `<div class="event ${event.type}"><time>${new Date(event.at).toLocaleString()}</time><p>${escapeHtml(event.message)}</p></div>`).join('') : '<div class="empty">Events appear here.</div>'; }
 function emptyDetail(title, copy) { $('#detail-panel').innerHTML = `<div class="empty-detail"><span class="forge-icon">A</span><h2>${title}</h2><p>${copy}</p></div>`; }
@@ -134,6 +157,7 @@ function bindProspectActions() {
 
 function bindProjectActions() {
   document.querySelectorAll('[data-run]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.run}/run`));
+  document.querySelectorAll('[data-edit-memory]').forEach((button) => button.onclick = () => openMemory(button.dataset.editMemory));
   document.querySelectorAll('[data-approve-project]').forEach((button) => button.onclick = () => act(`/api/projects/${button.dataset.approveProject}/approve`));
   document.querySelectorAll('[data-download]').forEach((link) => link.onclick = (event) => { event.preventDefault(); fetch(link.href, { headers: { 'x-adforge-key': state.key } }).then((response) => { if (!response.ok) throw new Error('Download failed'); return response.blob(); }).then((blob) => { const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'afterword-delivery.zip'; anchor.click(); URL.revokeObjectURL(url); }); });
 }
@@ -148,6 +172,19 @@ $('#nav-production').onclick = () => setView('production');
 $('#primary-action').onclick = () => $(state.view === 'prospects' ? '#prospect-dialog' : '#project-dialog').showModal();
 $('#close-project-dialog').onclick = () => $('#project-dialog').close();
 $('#close-prospect-dialog').onclick = () => $('#prospect-dialog').close();
+$('#close-memory-dialog').onclick = () => $('#memory-dialog').close();
+$('#memory-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const memory = {
+    terminology: lines(form.terminology.value),
+    bannedPhrases: lines(form.bannedPhrases.value),
+    styleNotes: lines(form.styleNotes.value),
+    voiceExamples: form.voiceExamples.value.split(/\n\s*-{3,}\s*\n/).map((post) => post.trim()).filter((post) => post.length >= 20),
+  };
+  try { await api(`/api/clients/${form.dataset.clientId}/memory`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(memory) }); $('#memory-dialog').close(); await load(); }
+  catch (error) { alert(error.message); }
+};
 $('#set-key').onclick = requestKey;
 $('#refresh').onclick = load;
 $('#create-demo').onclick = async () => { await api('/api/projects/demo/create', { method: 'POST' }); await load(); };

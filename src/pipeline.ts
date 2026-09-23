@@ -1,12 +1,13 @@
 import { scrapeBrand } from './brand.js';
 import { config } from './config.js';
-import { generateCampaign, transcribeFile } from './ai.js';
+import { generateCampaign, repairCampaign, transcribeFile, type CampaignContext } from './ai.js';
+import { ClientStore } from './client-store.js';
 import { inspectCampaign } from './quality.js';
 import { renderArtifacts } from './render.js';
 import { ProjectStore } from './store.js';
 import type { BrandProfile, Project, QualityReport } from './types.js';
 
-const MAX_WRITING_ATTEMPTS = 2;
+const MAX_REPAIR_ATTEMPTS = 1;
 
 type Task = () => Promise<void>;
 
@@ -35,7 +36,7 @@ export class ProductionPipeline {
   private queue = new WorkQueue(config.maxConcurrentJobs);
   private enqueued = new Set<string>();
 
-  constructor(private readonly store: ProjectStore) {}
+  constructor(private readonly store: ProjectStore, private readonly clients: ClientStore) {}
 
   enqueue(projectId: string): void {
     if (this.enqueued.has(projectId)) return;
@@ -67,22 +68,28 @@ export class ProductionPipeline {
       }
       project = await this.store.update(projectId, { brand });
 
-      let quality: QualityReport | undefined;
-      let editorNote = '';
-      for (let attempt = 1; attempt <= MAX_WRITING_ATTEMPTS; attempt += 1) {
-        await this.store.setStatus(projectId, 'writing', 52, attempt === 1 ? 'Developing the guide and campaign assets' : 'Rewriting after a failed quality gate');
-        const instructions = [project.revisionNote, editorNote].filter(Boolean).join('\n\n');
-        const bundle = await generateCampaign(project.intake, brand, transcript, instructions);
-        project = await this.store.update(projectId, { bundle });
+      // Brand memory: every run reads the client's accumulated rules, voice, and history.
+      const client = await this.clients.upsertFromIntake(project.intake);
+      if (project.clientId !== client.id) project = await this.store.update(projectId, { clientId: client.id });
 
-        await this.store.setStatus(projectId, 'quality-check', 72, 'Checking completeness, source coverage, and consistency');
-        quality = inspectCampaign(bundle, transcript);
-        if (!quality.blockers.length) break;
-        const failed = quality.checks.filter((check) => check.status === 'fail');
-        editorNote = `EDITOR NOTE: the previous draft failed these checks. Fix them.\n${failed.map((check) => `- ${check.name}: ${check.detail}`).join('\n')}`;
-        await this.store.update(projectId, { quality }, { type: 'note', message: `Quality gate failed on attempt ${attempt}: ${failed.map((check) => check.detail).join(' ')}` });
+      await this.store.setStatus(projectId, 'writing', 52, 'Developing the guide and campaign assets');
+      const context: CampaignContext = {
+        intake: project.intake, brand, transcript, revisionNote: project.revisionNote, client,
+        onStage: (message) => this.store.update(projectId, {}, { type: 'status', message }),
+      };
+      let bundle = await generateCampaign(context);
+      project = await this.store.update(projectId, { bundle });
+
+      await this.store.setStatus(projectId, 'quality-check', 72, 'Checking completeness, source coverage, and consistency');
+      let quality: QualityReport = inspectCampaign(bundle, transcript, client.memory);
+      for (let attempt = 1; quality.blockers.length && attempt <= MAX_REPAIR_ATTEMPTS; attempt += 1) {
+        const failures = quality.checks.filter((check) => check.status === 'fail').map((check) => `${check.name}: ${check.detail}`);
+        await this.store.update(projectId, { quality }, { type: 'note', message: `Quality gate failed; repairing. ${failures.join(' ')}` });
+        bundle = await repairCampaign(context, bundle, failures);
+        project = await this.store.update(projectId, { bundle });
+        quality = inspectCampaign(bundle, transcript, client.memory);
       }
-      if (!quality || quality.blockers.length) throw new Error(`Quality gate failed: ${quality?.blockers.join(', ') ?? 'no content'}`);
+      if (quality.blockers.length) throw new Error(`Quality gate failed: ${quality.blockers.join(', ')}`);
       project = await this.store.update(projectId, { quality });
 
       await this.store.setStatus(projectId, 'rendering', 88, 'Rendering the premium guide and delivery package');
