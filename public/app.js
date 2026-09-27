@@ -142,9 +142,11 @@ function bindProspectActions() {
   document.querySelectorAll('[data-generate]').forEach((button) => button.onclick = () => act(`/api/prospects/${button.dataset.generate}/generate`));
   document.querySelectorAll('[data-approve-prospect]').forEach((button) => button.onclick = () => act(`/api/prospects/${button.dataset.approveProspect}/approve`));
   document.querySelectorAll('[data-send]').forEach((button) => button.onclick = async () => {
-    if (!confirm('Send this exact approved email?')) return;
-    const result = await api(`/api/prospects/${button.dataset.send}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
-    if (result.status === 'dry-run') alert('Dry-run passed. Configure Resend to send live outreach.');
+    const id = button.dataset.send;
+    try {
+      const result = await api(`/api/prospects/${id}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+      if (result.status === 'manual' && result.email) await showManualSend(id, result.email);
+    } catch (error) { alert(error.message); }
     await load();
   });
   document.querySelectorAll('[data-status]').forEach((button) => button.onclick = async () => {
@@ -166,6 +168,27 @@ async function act(path) { await api(path, { method: 'POST' }); await load(); }
 function setView(view) { state.view = view; state.selected = currentList()[0]?.id || null; render(); }
 function requestKey() { const key = prompt('Enter your AdForge operator key'); if (key) { state.key = key; sessionStorage.setItem('adforge-key', key); void load(); } }
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = String(value ?? ''); return div.innerHTML; }
+
+async function showManualSend(id, email) {
+  const form = $('#send-form');
+  form.to.value = email.to;
+  form.subject.value = email.subject;
+  form.body.value = email.body;
+  form.dataset.prospectId = id;
+  try { await navigator.clipboard.writeText(email.body); } catch { /* clipboard may be blocked; the text stays selectable */ }
+  $('#send-dialog').showModal();
+}
+$('#close-send-dialog').onclick = () => $('#send-dialog').close();
+$('#copy-send').onclick = async () => { const form = $('#send-form'); try { await navigator.clipboard.writeText(form.body.value); } catch { form.body.select(); } };
+$('#send-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const id = event.currentTarget.dataset.prospectId;
+  try {
+    await api(`/api/prospects/${id}/mark-sent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+    $('#send-dialog').close();
+  } catch (error) { alert(error.message); }
+  await load();
+};
 
 $('#nav-prospects').onclick = () => setView('prospects');
 $('#nav-production').onclick = () => setView('production');

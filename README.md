@@ -18,7 +18,7 @@ It also includes the acquisition layer: import source-qualified prospects, score
 - Atomic local persistence, queue concurrency control, rate limiting, upload limits, and a non-root Docker runtime
 - CSV/JSON prospect import with duplicate protection and batches of up to 500 records
 - Evidence-based qualification, public-source Campaign Previews, and concise outreach drafts
-- Mandatory operator approval, duplicate-send protection, one-click opt-out, and dry-run email mode
+- Mandatory operator approval, duplicate-send protection, one-click opt-out, and manual sending from your own outreach mailbox
 
 ## Local setup
 
@@ -61,7 +61,7 @@ Each client company (keyed by website domain) has a reusable memory that is sent
 
 Opening a sent Campaign Preview is logged on the prospect (views in the first minute after sending are ignored as mail-scanner prefetches) and the first open notifies `ADFORGE_INTAKE_NOTIFY_TO`. Opt-outs go on a do-not-contact list keyed by email address, which blocks later imports, approvals, and sends even under a new source URL. Add an address or a whole domain with `POST /api/suppressions` and `{ "value": "@example.com" }`.
 
-Without `RESEND_API_KEY` and `ADFORGE_OUTREACH_FROM`, step five performs a safe dry run. When configured, it sends through Resend with an idempotency key and unsubscribe headers. The engine never discovers or guesses personal email addresses; import only business contacts you are permitted to approach, respect regional marketing rules, and honor suppression immediately.
+By default step five does not send anything. It returns the exact approved email (recipient, subject, body with the Campaign Preview and opt-out links) for you to send from a warmed outreach mailbox, and `POST /api/prospects/:id/mark-sent` with `{ "confirm": true }` records it as sent. Resend is used only for transactional mail (application confirmations, operator alerts): its acceptable use policy prohibits cold outreach, and a suspended account would also stop client mail. Automatic sending through Resend exists only behind the explicit `ADFORGE_OUTREACH_VIA_RESEND=true` opt-in; leave it off. The engine never discovers or guesses personal email addresses; import only business contacts you are permitted to approach, respect regional marketing rules, and honor suppression immediately.
 
 Required CSV fields are `companyName`, `website`, `sourceUrl`, `sourceTitle`, and `sourceSummary`. The summary should contain enough genuine source detail to support useful personalization. `contactName`, `contactEmail`, `role`, `country`, `offerHint`, and `notes` are optional at import time, although a verified email is required before sending.
 

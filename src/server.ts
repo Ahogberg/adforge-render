@@ -12,7 +12,7 @@ import { ClientStore } from './client-store.js';
 import { rememberApproval, rememberRevision } from './memory.js';
 import { config } from './config.js';
 import { notifyOperator, sendApplicationEmails } from './notifications.js';
-import { sendProspectEmail } from './outreach.js';
+import { assertSendable, outreachSendsAutomatically, sendProspectEmail } from './outreach.js';
 import { ProductionPipeline } from './pipeline.js';
 import { ProspectEngine } from './prospect-engine.js';
 import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview.js';
@@ -56,13 +56,17 @@ export async function createApp() {
     status: 'ok',
     service: 'adforge-production-engine',
     mode: config.openaiKey ? 'live' : 'demo',
-    outreach: config.resendKey && config.outreachFrom ? 'live' : 'dry-run',
+    outreach: outreachSendsAutomatically() ? 'resend' : 'manual',
+    applicationEmails: config.resendKey && config.intakeFrom ? 'on' : 'off',
+    operatorAlerts: config.resendKey && config.intakeFrom && config.intakeNotifyTo ? 'on' : 'off',
   }));
 
   const intakeLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
   app.post('/api/intake', intakeLimiter, upload.single('sourceFile'), asyncHandler(async (request, response) => {
     const intake = intakeSchema.parse(normalizeIntake(request.body));
-    let project = await store.create(intake, config.openaiKey ? 'live' : 'demo');
+    // Real applications are always live projects. Production only runs when the operator starts it,
+    // and the writer falls back to demo output only if no OpenAI key is configured at that moment.
+    let project = await store.create(intake, 'live');
     if (request.file) project = await store.update(project.id, { sourceFile: request.file.path });
     project = await linkReferral(project);
     // Public applications wait for the operator to confirm fit and payment before any paid
@@ -192,10 +196,19 @@ export async function createApp() {
     if (await prospectStore.isSuppressed(prospect.input.contactEmail)) return response.status(409).json({ error: 'This contact is on the do-not-contact list' });
     const result = await sendProspectEmail(prospect);
     if (result.dryRun) {
-      await prospectStore.update(id, {}, { type: 'email', message: 'Dry-run passed; configure the email provider to send' });
-      return response.json({ status: 'dry-run', previewUrl: `${config.publicUrl}/preview/${prospect.previewToken}` });
+      await prospectStore.update(id, {}, { type: 'email', message: 'Email prepared for manual sending from the outreach mailbox' });
+      return response.json({ status: 'manual', email: result.email, previewUrl: `${config.publicUrl}/preview/${prospect.previewToken}` });
     }
     response.json(await prospectStore.update(id, { status: 'sent', sentAt: new Date().toISOString(), providerMessageId: result.messageId }, { type: 'email', message: 'Personalized outreach sent' }));
+  }));
+  app.post('/api/prospects/:id/mark-sent', asyncHandler(async (request, response) => {
+    if (request.body.confirm !== true) return response.status(400).json({ error: 'Explicit confirmation is required' });
+    const id = param(request, 'id');
+    const prospect = await prospectStore.get(id);
+    if (!prospect) return response.status(404).json({ error: 'Prospect not found' });
+    if (await prospectStore.isSuppressed(prospect.input.contactEmail)) return response.status(409).json({ error: 'This contact is on the do-not-contact list' });
+    assertSendable(prospect);
+    response.json(await prospectStore.update(id, { status: 'sent', sentAt: new Date().toISOString() }, { type: 'email', message: 'Outreach sent manually from the outreach mailbox' }));
   }));
   app.post('/api/prospects/:id/status', asyncHandler(async (request, response) => {
     const status = prospectStatusSchema.parse(request.body.status);

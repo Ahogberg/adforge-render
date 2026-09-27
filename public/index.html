@@ -83,6 +83,18 @@
     </form>
   </dialog>
 
+  <dialog id="send-dialog">
+    <form id="send-form">
+      <div class="dialog-head"><div><span class="overline">Manual outreach</span><h2>Send from your outreach mailbox</h2></div><button type="button" class="close" id="close-send-dialog">×</button></div>
+      <div class="form-grid">
+        <label>To<input name="to" readonly></label>
+        <label>Subject<input name="subject" readonly></label>
+        <label class="wide">Body<textarea name="body" readonly style="min-height:260px"></textarea></label>
+      </div>
+      <div class="dialog-actions"><span><button type="button" id="copy-send" style="background:transparent;color:var(--gold);border:1px solid var(--line);padding:11px 14px">Copy body</button> Send it yourself, then mark it sent.</span><button type="submit">Mark as sent →</button></div>
+    </form>
+  </dialog>
+
   <dialog id="prospect-dialog">
     <form id="prospect-form">
       <div class="dialog-head"><div><span class="overline">Prospect import</span><h2>Add qualified source leads</h2></div><button type="button" class="close" id="close-prospect-dialog">×</button></div>

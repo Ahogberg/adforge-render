@@ -26,6 +26,8 @@ export const config = {
   maxConcurrentProspects: Math.max(1, integer(process.env.ADFORGE_PROSPECT_CONCURRENCY, 2)),
   resendKey: process.env.RESEND_API_KEY || '',
   outreachFrom: process.env.ADFORGE_OUTREACH_FROM || '',
+  // Off by default: cold outreach goes out manually from a warmed outreach mailbox.
+  outreachViaResend: process.env.ADFORGE_OUTREACH_VIA_RESEND === 'true',
   outreachReplyTo: process.env.ADFORGE_OUTREACH_REPLY_TO || '',
   intakeFrom: process.env.ADFORGE_INTAKE_FROM || process.env.ADFORGE_OUTREACH_FROM || '',
   intakeReplyTo: process.env.ADFORGE_INTAKE_REPLY_TO || process.env.ADFORGE_OUTREACH_REPLY_TO || '',

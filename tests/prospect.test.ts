@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { config } from '../src/config.js';
 import { generateProspectPreview } from '../src/ai.js';
 import { sendProspectEmail } from '../src/outreach.js';
 import { renderProspectPreview } from '../src/prospect-preview.js';
@@ -53,6 +54,30 @@ describe('prospect generation', () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), mode: 'demo',
       brand, ...generated, approvedAt: new Date().toISOString(), events: [],
     };
-    await expect(sendProspectEmail(prospect)).resolves.toEqual({ dryRun: true });
+    const result = await sendProspectEmail(prospect);
+    expect(result.dryRun).toBe(true);
+    expect(result.email.to).toBe('avery@example.com');
+    expect(result.email.body).toContain('/preview/private-token-2');
+    expect(result.email.body).toContain('/unsubscribe/private-token-2');
+  });
+
+  it('never sends cold outreach through Resend without the explicit opt-in', async () => {
+    const generated = await generateProspectPreview(input, brand);
+    const prospect: Prospect = {
+      id: 'prospect-3', previewToken: 'private-token-3', input, status: 'approved',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), mode: 'demo',
+      brand, ...generated, approvedAt: new Date().toISOString(), events: [],
+    };
+    const saved = { resendKey: config.resendKey, outreachFrom: config.outreachFrom, outreachViaResend: config.outreachViaResend };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      Object.assign(config, { resendKey: 're_test', outreachFrom: 'Afterword <hello@example.com>', outreachViaResend: false });
+      const result = await sendProspectEmail(prospect);
+      expect(result.dryRun).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(config, saved);
+      fetchSpy.mockRestore();
+    }
   });
 });
