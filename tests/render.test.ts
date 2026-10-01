@@ -27,7 +27,7 @@ describe('guide rendering', () => {
     const artifacts = await renderArtifacts(project);
     const pdf = await readFile(artifacts.pdf, 'latin1');
     const pages = pdf.match(/\/Type\s*\/Page[^s]/g)?.length ?? 0;
-    // cover, intro, contents, 4 sections, checklist, CTA = 9 pages without flowing.
-    expect(pages).toBeGreaterThan(9);
+    // cover, summary, 4 sections, closing = 7 pages without flowing.
+    expect(pages).toBeGreaterThan(7);
   }, 60_000);
 });

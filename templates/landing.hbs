@@ -1,4 +1,55 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{bundle.landingPage.headline}} — {{project.intake.companyName}}</title>
-<style>:root{--brand:{{brand.primaryColor}};--bg:{{brand.backgroundColor}};--ink:{{brand.textColor}} }*{box-sizing:border-box}body{margin:0;font-family:{{brand.fontFamily}},Arial,sans-serif;background:#f7f7f5;color:#171817}.nav{height:72px;padding:0 5vw;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ddd}.brand{font-weight:750}.hero{min-height:calc(100vh - 72px);max-width:1160px;margin:auto;padding:80px 30px;display:grid;grid-template-columns:1.1fr .7fr;gap:80px;align-items:center}.eyebrow{color:var(--brand);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}h1{font-size:clamp(44px,6vw,78px);line-height:1.02;letter-spacing:-.055em;margin:18px 0 24px}.sub{font-size:18px;line-height:1.7;color:#666;max-width:650px}.bullets{list-style:none;padding:0;margin:32px 0;display:grid;gap:12px}.bullets li:before{content:'✓';color:var(--brand);font-weight:800;margin-right:12px}.form{background:#fff;border:1px solid #ddd;padding:40px;box-shadow:0 24px 80px rgba(0,0,0,.08)}.form h2{font-size:25px;margin:0 0 10px}.form p{color:#777;line-height:1.6}.input{width:100%;padding:14px;margin-top:12px;border:1px solid #ccc;font:inherit}.button{width:100%;border:0;margin-top:12px;padding:15px;background:var(--brand);color:#fff;font-weight:800;font-size:15px}@media(max-width:760px){.hero{grid-template-columns:1fr;padding-top:50px}.nav{padding:0 20px}}</style></head>
-<body><nav class="nav"><div class="brand">{{project.intake.companyName}}</div><span>Free practical guide</span></nav><main class="hero"><section><div class="eyebrow">{{bundle.landingPage.eyebrow}}</div><h1>{{bundle.landingPage.headline}}</h1><p class="sub">{{bundle.landingPage.subheadline}}</p><ul class="bullets">{{#each bundle.landingPage.bullets}}<li>{{this}}</li>{{/each}}</ul></section><aside class="form"><h2>{{bundle.landingPage.formHeading}}</h2><p>Enter your details to receive the guide.</p><input class="input" aria-label="First name" placeholder="First name"><input class="input" type="email" aria-label="Work email" placeholder="Work email"><button class="button">{{bundle.landingPage.buttonLabel}}</button></aside></main></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{bundle.landingPage.headline}} | {{project.intake.companyName}}</title>
+<style>
+{{{fontCss}}}
+:root{--brand:{{palette.brand}};--accent:{{palette.accent}};--deep:{{palette.deep}};--on-deep:{{palette.onDeep}};--deep-accent:{{palette.deepAccent}};--tint:{{palette.tint}};--button:{{palette.button}};--on-button:{{palette.onButton}};--ink:#141616;--body:#3A3D3A;--muted:#6A6D69;--rule:#E2E0DA;--serif:'Source Serif',Georgia,serif;--sans:'Inter',Arial,sans-serif}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;background:#fff;color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+.nav{max-width:1200px;margin:auto;height:76px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.nav img{display:block;max-height:34px;max-width:180px;object-fit:contain}.nav .chip{padding:7px 10px;border-radius:6px;background:{{logo.background}};}
+.wordmark{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:14px}.nav span{color:var(--muted);font-size:14px}
+.hero{background:var(--tint)}.hero-inner{max-width:1200px;margin:auto;padding:72px 24px 88px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:72px;align-items:center}
+.eyebrow{color:var(--accent);font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+h1{margin:18px 0 20px;font:500 clamp(38px,5vw,62px)/1.06 var(--serif);letter-spacing:-.02em}
+.sub{max-width:600px;margin:0;color:var(--body);font-size:18px;line-height:1.65}
+.bullets{list-style:none;margin:28px 0 32px;padding:0;display:grid;gap:12px}.bullets li{display:grid;grid-template-columns:24px 1fr;gap:10px;color:var(--body)}
+.bullets li::before{content:'';width:18px;height:18px;margin-top:4px;border-radius:50%;background:var(--button) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") center/12px no-repeat}
+.form{max-width:560px;padding:22px;background:#fff;border:1px solid var(--rule);border-radius:10px;box-shadow:0 18px 50px rgba(20,22,22,.08)}
+.form h2{margin:0 0 4px;font:600 18px/1.3 var(--sans)}.form p{margin:0 0 14px;color:var(--muted);font-size:14px}
+.fields{display:grid;grid-template-columns:1fr 1fr auto;gap:10px}.input{min-width:0;padding:13px 14px;border:1px solid #CFCCC5;border-radius:6px;font:inherit;font-size:15px}
+.button{padding:13px 20px;border:0;border-radius:6px;background:var(--button);color:var(--on-button);font:600 15px var(--sans);cursor:pointer;white-space:nowrap}
+.cover{aspect-ratio:210/297;width:100%;max-width:380px;justify-self:center;display:grid;grid-template-rows:1fr 34%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 2px 4px rgba(20,22,22,.06),0 30px 70px rgba(20,22,22,.18);transform:rotate(1.2deg)}
+.cover-top{padding:26px 26px 18px;display:flex;flex-direction:column}.cover-top img{max-height:22px;max-width:120px;object-fit:contain;align-self:flex-start}.cover-top .chip{padding:5px 7px;border-radius:4px;background:{{logo.background}};}
+.cover-top .wordmark{font-size:10px}.cover-title{margin-top:auto}.cover-title small{color:var(--accent);font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+.cover-title strong{display:block;margin-top:8px;font:500 clamp(20px,2.3vw,27px)/1.1 var(--serif);letter-spacing:-.015em}
+.cover-panel{position:relative;overflow:hidden;padding:18px 26px;background:var(--deep);color:var(--on-deep);font-size:10px;line-height:1.4}
+.cover-panel::before{content:'';position:absolute;width:190px;height:190px;right:-80px;top:-95px;border-radius:50%;border:1px solid var(--deep-accent);opacity:.35}
+.cover-panel small{display:block;color:var(--deep-accent);font-size:7px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+.inside{max-width:1200px;margin:auto;padding:88px 24px}.inside h2{max-width:720px;margin:14px 0 40px;font:500 clamp(28px,3.4vw,40px)/1.15 var(--serif);letter-spacing:-.015em}
+.chapters{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));border-top:1px solid var(--rule)}
+.chapters li{padding:22px 24px 26px 0;border-bottom:1px solid var(--rule)}.chapters span{color:var(--accent);font:400 26px/1 var(--serif)}
+.chapters b{display:block;margin-top:14px;color:var(--accent);font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase}.chapters strong{display:block;margin-top:6px;font:500 19px/1.3 var(--serif)}
+footer{padding:28px 24px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px;text-align:center}
+@media(max-width:860px){.hero-inner{grid-template-columns:1fr;gap:48px;padding:48px 20px 64px}.cover{max-width:300px}.fields{grid-template-columns:1fr}.nav{padding:0 20px}.inside{padding:64px 20px}}
+</style></head>
+<body>
+<nav class="nav">{{#if logo.src}}<div{{#if logo.chip}} class="chip"{{/if}}><img src="{{logo.src}}" alt="{{project.intake.companyName}}" onerror="this.parentNode.replaceWith(Object.assign(document.createElement('div'),{className:'wordmark',textContent:this.alt}))"></div>{{else}}<div class="wordmark">{{project.intake.companyName}}</div>{{/if}}<span>{{bundle.landingPage.eyebrow}}</span></nav>
+<header class="hero"><div class="hero-inner">
+  <section>
+    <div class="eyebrow">{{bundle.landingPage.eyebrow}}</div>
+    <h1>{{bundle.landingPage.headline}}</h1>
+    <p class="sub">{{bundle.landingPage.subheadline}}</p>
+    <ul class="bullets">{{#each bundle.landingPage.bullets}}<li>{{this}}</li>{{/each}}</ul>
+    <form class="form" onsubmit="return false"><h2>{{bundle.landingPage.formHeading}}</h2><p>Enter your details and the guide arrives in your inbox.</p><div class="fields"><input class="input" aria-label="First name" placeholder="First name"><input class="input" type="email" aria-label="Work email" placeholder="Work email"><button class="button">{{bundle.landingPage.buttonLabel}}</button></div></form>
+  </section>
+  <div class="cover" aria-hidden="true">
+    <div class="cover-top">{{#if logo.src}}<div{{#if logo.chip}} class="chip"{{/if}}><img src="{{logo.src}}" alt="{{project.intake.companyName}}" onerror="this.parentNode.replaceWith(Object.assign(document.createElement('div'),{className:'wordmark',textContent:this.alt}))"></div>{{else}}<div class="wordmark">{{project.intake.companyName}}</div>{{/if}}<div class="cover-title"><small>A practical field guide</small><strong>{{bundle.title}}</strong></div></div>
+    <div class="cover-panel"><small>Built for</small>{{project.intake.audience}}</div>
+  </div>
+</div></header>
+<main class="inside">
+  <div class="eyebrow">Inside the guide</div>
+  <h2>{{bundle.subtitle}}</h2>
+  <ol class="chapters">{{#each bundle.sections}}<li><span>{{number}}</span><b>{{eyebrow}}</b><strong>{{title}}</strong></li>{{/each}}</ol>
+</main>
+<footer>{{project.intake.companyName}} · {{websiteHost}}</footer>
+</body></html>

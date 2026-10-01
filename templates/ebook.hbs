@@ -4,99 +4,154 @@
   <meta charset="utf-8">
   <title>{{bundle.title}}</title>
   <style>
-    :root { --brand: {{brand.accentColor}}; --on-brand: {{brand.onAccentColor}}; --ink: #121414; --paper: #f6f2e9; --muted: #6f716d; }
+    {{{fontCss}}}
+    :root {
+      --brand: {{palette.brand}}; --accent: {{palette.accent}}; --deep: {{palette.deep}}; --on-deep: {{palette.onDeep}};
+      --deep-accent: {{palette.deepAccent}}; --tint: {{palette.tint}};
+      --ink: #141616; --body: #2B2D2B; --muted: #6A6D69; --rule: #DAD8D2;
+      --serif: 'Source Serif', Georgia, serif; --sans: 'Inter', Arial, sans-serif;
+    }
     * { box-sizing: border-box; }
     @page { size: A4; margin: 0; }
-    body { margin: 0; color: var(--ink); background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    .page { width: 210mm; height: 297mm; padding: 19mm 18mm 17mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; }
+    body { margin: 0; color: var(--ink); background: #fff; font-family: var(--sans); font-kerning: normal; text-rendering: optimizeLegibility; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .page { width: 210mm; height: 297mm; padding: 24mm 20mm 26mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; }
     .page:last-child { page-break-after: auto; }
-    .folio { position: absolute; left: 18mm; right: 18mm; bottom: 10mm; padding-top: 4mm; border-top: .25mm solid #ddd7cc; display: flex; justify-content: space-between; color: #aaa69f; font-size: 8pt; letter-spacing: .08em; text-transform: uppercase; }
-    .folio b { color: var(--brand); }
-    .cover { color: #f7f3ea; background: #101212; display: flex; flex-direction: column; justify-content: space-between; }
-    .cover::after { content: ''; position: absolute; width: 150mm; height: 150mm; right: -70mm; top: 30mm; border: .3mm solid color-mix(in srgb, var(--brand) 35%, transparent); border-radius: 50%; box-shadow: 0 0 0 25mm color-mix(in srgb, var(--brand) 4%, transparent), 0 0 0 50mm color-mix(in srgb, var(--brand) 2%, transparent); }
-    .cover > * { position: relative; z-index: 1; }
-    .logo { font-size: 9pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-    .cover-copy { max-width: 155mm; }
-    .kicker, .eyebrow { color: var(--brand); font-size: 8pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
-    h1 { margin: 7mm 0 6mm; font-family: Georgia, serif; font-size: 37pt; line-height: 1.08; font-weight: 400; letter-spacing: -.035em; }
-    .cover .subtitle { max-width: 125mm; color: #aaa9a3; font-size: 13pt; line-height: 1.6; }
-    .cover-meta { display: flex; justify-content: space-between; align-items: end; padding-top: 7mm; border-top: .25mm solid #343737; color: #797c79; font-size: 8pt; line-height: 1.6; }
-    .intro { background: var(--paper); display: grid; grid-template-columns: 1fr 52mm; gap: 16mm; }
-    .intro h2, .contents h2, .content h2, .checklist h2 { margin: 5mm 0 8mm; font: 400 27pt/1.15 Georgia, serif; letter-spacing: -.025em; }
-    .intro p, .content p { color: #4d504d; font-size: 10.5pt; line-height: 1.75; }
-    .intro-aside { border-left: .7mm solid var(--brand); padding-left: 7mm; }
-    .intro-aside span { display: block; margin-bottom: 3mm; color: #8f8e88; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .12em; }
-    .intro-aside strong { font: 400 16pt/1.35 Georgia, serif; }
-    .contents { background: #fff; }
-    .contents-list { list-style: none; margin: 17mm 0 0; padding: 0; border-top: .25mm solid #ddd7cc; }
-    .contents-list li { padding: 5mm 0; display: grid; grid-template-columns: 11mm 1fr auto; gap: 5mm; border-bottom: .25mm solid #ddd7cc; align-items: baseline; }
-    .contents-list span:first-child { color: var(--brand); font: 400 11pt Georgia, serif; }
-    .contents-list b { font-size: 10pt; }
-    .contents-list small { color: #99958d; font-size: 8pt; }
-    .content { display: flex; flex-direction: column; }
-    .section-number { color: #ddd8ce; font: 700 50pt/1 var(--font, Arial); margin-bottom: 9mm; }
-    .body-copy { columns: 2; column-gap: 12mm; column-rule: .25mm solid #ece8df; }
-    .body-copy p { margin: 0 0 5mm; break-inside: avoid; }
-    blockquote { margin: auto 0 13mm; padding: 7mm 0 0 8mm; border-left: .8mm solid var(--brand); font: italic 17pt/1.45 Georgia, serif; }
-    blockquote small { display: block; margin-top: 3mm; color: #99958d; font: 7.5pt Arial, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
-    .checklist { background: #101212; color: #f7f3ea; }
-    .checklist h2 { max-width: 145mm; font-size: 31pt; }
-    .checks { margin-top: 16mm; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12mm; }
-    .check { padding: 7mm 0; border-top: .25mm solid #353838; display: grid; grid-template-columns: 10mm 1fr; gap: 4mm; color: #b9bab6; font-size: 10.5pt; line-height: 1.55; }
-    .check b { width: 7mm; height: 7mm; border: .5mm solid var(--brand); color: var(--brand); display: grid; place-items: center; font-size: 7pt; }
-    .cta { background: var(--brand); color: var(--on-brand); display: flex; flex-direction: column; justify-content: center; }
-    .cta .eyebrow { color: var(--on-brand); opacity: .7; }
-    .cta h2 { max-width: 150mm; margin: 7mm 0; font: 400 34pt/1.1 Georgia, serif; letter-spacing: -.035em; }
-    .cta p { max-width: 125mm; font-size: 12pt; line-height: 1.7; color: var(--on-brand); opacity: .82; }
-    .cta-button { margin-top: 10mm; align-self: flex-start; padding: 5mm 8mm; background: var(--on-brand); color: var(--brand); font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .eyebrow, .label { font: 600 7.5pt/1.4 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+    .label { color: var(--muted); }
+    .folio { position: absolute; left: 20mm; right: 20mm; bottom: 11mm; padding-top: 3.5mm; border-top: .25mm solid var(--rule); display: flex; justify-content: space-between; color: var(--muted); font: 500 7pt var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+    .folio b { color: var(--accent); font-weight: 600; }
+    .running { position: absolute; top: 11mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; gap: 10mm; color: var(--muted); font: 500 6.8pt var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+    .running span:last-child { max-width: 95mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    /* Cover */
+    .cover { padding: 0; display: grid; grid-template-rows: 1fr 100mm; }
+    .cover-top { padding: 20mm 20mm 15mm; display: flex; flex-direction: column; }
+    .cover-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10mm; }
+    .logo img { display: block; max-height: 13mm; max-width: 62mm; object-fit: contain; }
+    .logo.chip { padding: 3mm 4mm; border-radius: 1.5mm; background: {{logo.background}}; }
+    .wordmark { font: 700 10pt/1.2 var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+    .edition { padding-top: 1mm; color: var(--muted); font: 500 7.5pt var(--sans); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+    .cover-title { margin-top: auto; }
+    .cover h1 { max-width: 165mm; margin: 6mm 0 7mm; font: 500 40pt/1.06 var(--serif); letter-spacing: -.022em; color: var(--ink); }
+    .cover .subtitle { max-width: 135mm; color: var(--muted); font: 400 12.5pt/1.55 var(--sans); }
+    .cover-panel { position: relative; overflow: hidden; padding: 15mm 20mm 17mm; background: var(--deep); color: var(--on-deep); display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; align-items: end; }
+    .cover-panel::before { content: ''; position: absolute; width: 120mm; height: 120mm; right: -48mm; top: -58mm; border-radius: 50%; border: .3mm solid var(--deep-accent); opacity: .35; box-shadow: 0 0 0 14mm color-mix(in srgb, var(--deep-accent) 6%, transparent); }
+    .cover-panel > * { position: relative; }
+    .cover-panel .label, .cover-panel .eyebrow { color: var(--deep-accent); }
+    .built-for { margin-top: 4mm; font: 400 15pt/1.35 var(--serif); }
+    .chapters { list-style: none; margin: 0; padding: 0; display: grid; gap: 2.4mm; }
+    .chapters li { display: grid; grid-template-columns: 8mm 1fr; font: 500 7.5pt/1.35 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: color-mix(in srgb, var(--on-deep) 82%, transparent); }
+    .chapters li span { color: var(--deep-accent); }
+
+    /* Summary and route */
+    .summary { background: var(--tint); }
+    .summary-grid { display: grid; grid-template-columns: 1fr 46mm; gap: 14mm; }
+    .summary h2 { margin: 5mm 0 7mm; font: 500 25pt/1.16 var(--serif); letter-spacing: -.015em; }
+    .summary p { margin: 0; color: var(--body); font: 400 11.5pt/1.62 var(--serif); }
+    .facts { padding-left: 6mm; border-left: .6mm solid var(--brand); display: grid; gap: 7mm; align-content: start; }
+    .facts strong { display: block; margin-top: 1.8mm; font: 400 12pt/1.35 var(--serif); }
+    .route { margin-top: 15mm; }
+    .route ol { list-style: none; margin: 6mm 0 0; padding: 0; }
+    .route li { position: relative; display: grid; grid-template-columns: 9mm 1fr auto; gap: 5mm; align-items: center; padding: 2.6mm 0; }
+    .route li::before { content: ''; position: absolute; left: 4.4mm; top: 0; bottom: 0; width: .25mm; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .route li:first-child::before { top: 50%; }
+    .route li:last-child::before { bottom: 50%; }
+    .route .node { position: relative; z-index: 1; width: 9mm; height: 9mm; border-radius: 50%; border: .35mm solid var(--accent); background: var(--tint); color: var(--accent); display: grid; place-items: center; font: 600 7.5pt var(--sans); }
+    .route b { display: block; color: var(--accent); font: 600 6.8pt/1.3 var(--sans); letter-spacing: .13em; text-transform: uppercase; }
+    .route strong { display: block; margin-top: .6mm; font: 500 11.5pt/1.3 var(--serif); }
+    .route small { color: var(--muted); font: 500 7.5pt var(--sans); letter-spacing: .08em; }
+
+    /* Sections */
+    .content { padding-left: 66mm; }
+    .section-side { position: absolute; left: 20mm; top: 24mm; width: 36mm; }
+    .section-number { margin-bottom: 4mm; color: var(--accent); font: 400 40pt/1 var(--serif); letter-spacing: -.02em; }
+    .content h2 { margin: 0 0 8mm; font: 500 24pt/1.16 var(--serif); letter-spacing: -.015em; }
+    .body-copy p { margin: 0 0 4.2mm; color: var(--body); font: 400 11pt/1.62 var(--serif); hyphens: auto; }
+    .content:not(.continued) .body-copy p:first-child { color: var(--ink); font-size: 12.5pt; line-height: 1.55; }
+    .continued > .eyebrow { margin-bottom: 6mm; }
+    blockquote { margin: 9mm 0 0; padding: .5mm 0 .5mm 7mm; border-left: .8mm solid var(--brand); font: italic 400 15.5pt/1.45 var(--serif); color: var(--ink); }
+    blockquote small { display: block; margin-top: 3mm; color: var(--muted); font: normal 500 6.8pt var(--sans); letter-spacing: .12em; text-transform: uppercase; }
+
+    /* Closing */
+    .closing { padding: 0; display: flex; flex-direction: column; }
+    .closing-top { padding: 24mm 20mm 12mm; }
+    .closing h2 { max-width: 150mm; margin: 5mm 0 0; font: 500 25pt/1.16 var(--serif); letter-spacing: -.015em; }
+    .checks { list-style: none; margin: 10mm 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12mm; }
+    .checks li { padding: 4.6mm 0; border-top: .25mm solid var(--rule); display: grid; grid-template-columns: 9mm 1fr; gap: 3mm; color: var(--body); font: 400 10.5pt/1.5 var(--serif); }
+    .checks b { width: 6.5mm; height: 6.5mm; border: .35mm solid var(--accent); color: var(--accent); display: grid; place-items: center; font: 600 6.8pt var(--sans); }
+    .cta-band { margin-top: auto; padding: 16mm 20mm 30mm; background: var(--deep); color: var(--on-deep); }
+    .cta-band .eyebrow { color: var(--deep-accent); }
+    .cta-band h2 { margin: 5mm 0 5mm; max-width: 150mm; font: 500 27pt/1.12 var(--serif); }
+    .cta-band p { max-width: 130mm; margin: 0; font: 400 10.5pt/1.65 var(--sans); color: color-mix(in srgb, var(--on-deep) 82%, transparent); }
+    .cta-button { display: inline-block; margin-top: 9mm; padding: 4mm 7mm; background: var(--on-deep); color: var(--deep); font: 600 8.5pt var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+    .cta-band .folio, .cta-page .folio { color: color-mix(in srgb, var(--on-deep) 60%, transparent); border-color: color-mix(in srgb, var(--on-deep) 20%, transparent); }
+    .cta-band .folio b, .cta-page .folio b { color: var(--deep-accent); }
+    .cta-page { padding: 0; display: flex; flex-direction: column; background: var(--deep); }
+    .cta-page .cta-band { margin-top: auto; }
   </style>
 </head>
 <body>
   <section class="page cover">
-    <div class="logo">{{project.intake.companyName}}</div>
-    <div class="cover-copy">
-      <div class="kicker">A practical field guide</div>
-      <h1>{{bundle.title}}</h1>
-      <div class="subtitle">{{bundle.subtitle}}</div>
+    <div class="cover-top">
+      <div class="cover-head">
+        {{#if logo.src}}<div class="logo{{#if logo.chip}} chip{{/if}}"><img src="{{logo.src}}" alt="{{project.intake.companyName}}"></div>{{else}}<div class="wordmark">{{project.intake.companyName}}</div>{{/if}}
+        <div class="edition">{{edition}}</div>
+      </div>
+      <div class="cover-title">
+        <div class="eyebrow">A practical field guide</div>
+        <h1>{{bundle.title}}</h1>
+        <div class="subtitle">{{bundle.subtitle}}</div>
+      </div>
     </div>
-    <div class="cover-meta"><span>Developed from original expert source material</span><span>Prepared by Afterword</span></div>
+    <div class="cover-panel">
+      <div><div class="label">Built for</div><div class="built-for">{{project.intake.audience}}</div></div>
+      <ol class="chapters">{{#each bundle.sections}}<li><span>{{number}}</span>{{eyebrow}}</li>{{/each}}</ol>
+    </div>
   </section>
-  <section class="page intro">
-    <div>
-      <div class="eyebrow">Executive summary</div>
-      <h2>{{bundle.campaignAngle}}</h2>
-      <p>{{bundle.executiveSummary}}</p>
+
+  <section class="page summary" data-split=".route">
+    <div class="summary-grid">
+      <div>
+        <div class="eyebrow">Executive summary</div>
+        <h2>{{bundle.campaignAngle}}</h2>
+        <p>{{bundle.executiveSummary}}</p>
+      </div>
+      <aside class="facts">
+        <div><div class="label">Built for</div><strong>{{project.intake.audience}}</strong></div>
+        <div><div class="label">Developed from</div><strong>{{sourceLabel}}</strong></div>
+      </aside>
     </div>
-    <aside class="intro-aside"><span>Built for</span><strong>{{project.intake.audience}}</strong></aside>
+    <nav class="route">
+      <div class="eyebrow">Inside this guide</div>
+      <ol>{{#each bundle.sections}}<li data-route="{{@index}}"><span class="node">{{number}}</span><span><b>{{eyebrow}}</b><strong>{{title}}</strong></span><small>p. {{folio}}</small></li>{{/each}}</ol>
+    </nav>
     <div class="folio"><span>{{project.intake.companyName}}</span><b>02</b></div>
   </section>
-  <section class="page contents">
-    <div class="eyebrow">Inside this guide</div>
-    <h2>A practical route through the central argument.</h2>
-    <ol class="contents-list">{{#each bundle.sections}}<li><span>{{number}}</span><b>{{title}}</b><small>{{#if sourceTimestamp}}{{sourceTimestamp}}{{else}}Source checked{{/if}}</small></li>{{/each}}</ol>
-    <div class="folio"><span>{{project.intake.companyName}}</span><b>03</b></div>
-  </section>
+
   {{#each bundle.sections}}
-  <section class="page content">
-    <div class="section-number">{{number}}</div>
-    <div class="eyebrow">{{eyebrow}}</div>
+  <section class="page content" data-section="{{@index}}">
+    <div class="running"><span>{{../project.intake.companyName}}</span><span>{{../bundle.title}}</span></div>
+    <div class="section-side"><div class="section-number">{{number}}</div><div class="eyebrow">{{eyebrow}}</div></div>
     <h2>{{title}}</h2>
     <div class="body-copy">{{#each body}}<p>{{this}}</p>{{/each}}</div>
     {{#if pullQuote}}<blockquote>“{{pullQuote}}”{{#if sourceTimestamp}}<small>Source reference {{sourceTimestamp}}</small>{{/if}}</blockquote>{{/if}}
     <div class="folio"><span>{{../project.intake.companyName}}</span><b>{{folio}}</b></div>
   </section>
   {{/each}}
-  <section class="page checklist">
-    <div class="eyebrow">Implementation checklist</div>
-    <h2>Turn the central idea into a decision your team can use.</h2>
-    <div class="checks">{{#each bundle.actionChecklist}}<div class="check"><b>✓</b><span>{{this}}</span></div>{{/each}}</div>
-    <div class="folio"><span>{{project.intake.companyName}}</span><b>Action</b></div>
-  </section>
-  <section class="page cta">
-    <div class="eyebrow">A practical next step</div>
-    <h2>{{project.intake.callToAction}}</h2>
-    <p>Continue the conversation with {{project.intake.companyName}} and turn the ideas in this guide into a plan for your situation.</p>
-    <div class="cta-button">{{project.intake.website}}</div>
+
+  <section class="page closing" data-split=".cta-band">
+    <div class="closing-top">
+      <div class="eyebrow">Put it to work</div>
+      <h2>Turn the central idea into a decision your team can use.</h2>
+      <ol class="checks">{{#each bundle.actionChecklist}}<li><b>{{inc @index}}</b><span>{{this}}</span></li>{{/each}}</ol>
+    </div>
+    <div class="cta-band">
+      <div class="eyebrow">A practical next step</div>
+      <h2>{{project.intake.callToAction}}</h2>
+      <p>Continue the conversation with {{project.intake.companyName}} and turn the ideas in this guide into a plan for your situation.</p>
+      <div class="cta-button">{{websiteHost}}</div>
+      <div class="folio"><span>{{project.intake.companyName}}</span><b>{{closingFolio}}</b></div>
+    </div>
   </section>
 </body>
 </html>

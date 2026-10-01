@@ -82,6 +82,8 @@ export interface BrandProfile {
   title: string;
   description: string;
   logoUrl: string;
+  /** Background the logo was drawn on, so light logos made for dark headers stay visible. */
+  logoBackground?: string;
   primaryColor: string;
   backgroundColor: string;
   textColor: string;
