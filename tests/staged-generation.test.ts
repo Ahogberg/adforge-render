@@ -16,22 +16,45 @@ const outputs: Record<string, unknown> = {
   adforge_revision_lessons: { terminology: ['Say clients, not customers'], bannedPhrases: [], styleNotes: [] },
 };
 
-vi.mock('openai', () => ({
+// Each step is recognised by the first required field of its response schema.
+const STEP_BY_FIELD: Record<string, string> = {
+  thesisCandidates: 'adforge_source_ideas',
+  thesis: 'adforge_campaign_plan',
+  executiveSummary: 'adforge_campaign_guide',
+  linkedinPosts: 'adforge_campaign_derivatives',
+  terminology: 'adforge_revision_lessons',
+  campaignAngle: 'adforge_campaign_bundle',
+};
+const requests: Array<Record<string, any>> = [];
+let nextStopReason: string | undefined;
+
+vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
-    responses = {
-      create: async (request: { instructions: string; input: string; text: { format: { name: string } } }) => {
-        const name = request.text.format.name;
-        calls.push({ name, instructions: request.instructions, input: request.input });
-        // The editor pass returns the draft it was given, as a faithful editor with nothing to fix would.
-        const output = name === 'adforge_campaign_bundle' ? JSON.parse(request.input.split('\nCAMPAIGN\n')[1]!.split('\n\nSOURCE TRANSCRIPT\n')[0]!) : outputs[name];
-        return { output_text: JSON.stringify(output) };
+    beta = {
+      messages: {
+        stream: (request: { system: string; messages: Array<{ content: string }>; output_config: { format: { schema: { required: string[] } } } }) => ({
+          finalMessage: async () => {
+            requests.push(request);
+            const input = request.messages[0]!.content;
+            const name = STEP_BY_FIELD[request.output_config.format.schema.required[0]!]!;
+            calls.push({ name, instructions: request.system, input });
+            if (nextStopReason) {
+              const stop_reason = nextStopReason;
+              nextStopReason = undefined;
+              return { stop_reason, stop_details: { type: 'refusal', category: 'cyber', explanation: null }, content: [] };
+            }
+            // The editor pass returns the draft it was given, as a faithful editor with nothing to fix would.
+            const output = name === 'adforge_campaign_bundle' ? JSON.parse(input.split('\nCAMPAIGN\n')[1]!.split('\n\nSOURCE TRANSCRIPT\n')[0]!) : outputs[name];
+            return { stop_reason: 'end_turn', stop_details: null, content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: JSON.stringify(output) }] };
+          },
+        }),
       },
     };
   },
 }));
 
-vi.stubEnv('OPENAI_API_KEY', 'test-key');
-const { generateCampaign, repairCampaign, distilRevision } = await import('../src/ai.js');
+vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
+const { generateCampaign, repairCampaign, distilRevision, toClaudeSchema } = await import('../src/ai.js');
 const { intakeSchema } = await import('../src/types.js');
 afterAll(() => { vi.unstubAllEnvs(); });
 
@@ -79,5 +102,41 @@ describe('staged campaign generation', () => {
   it('distils durable rules from a revision note', async () => {
     const lessons = await distilRevision('Please say clients, not customers, everywhere.', context.client.memory);
     expect(lessons.terminology).toEqual(['Say clients, not customers']);
+  });
+
+  it('calls Claude with structured output, explicit effort, and server-side fallbacks', async () => {
+    const request = requests.at(-1)!;
+    expect(request.model).toBe('claude-opus-5-5');
+    expect(request.fallbacks).toBe('default');
+    expect(request.betas).toEqual(['server-side-fallback-2026-07-01']);
+    expect(request.output_config.effort).toBe('medium');
+    expect(request.output_config.format.type).toBe('json_schema');
+    expect(requests[0]!.output_config.effort).toBe('high');
+  });
+
+  it('turns a classifier decline into a clear production error', async () => {
+    nextStopReason = 'refusal';
+    await expect(distilRevision('A note', context.client.memory)).rejects.toThrow('Claude declined the adforge_revision_lessons step (cyber)');
+  });
+});
+
+describe('structured output schema', () => {
+  it('drops unsupported count and range constraints and writes nullable fields as anyOf', () => {
+    const schema = toClaudeSchema({
+      type: 'object', additionalProperties: false, required: ['items', 'score', 'quote'],
+      properties: {
+        items: { type: 'array', minItems: 4, maxItems: 8, items: { type: 'string' } },
+        score: { type: 'integer', minimum: 0, maximum: 100 },
+        quote: { type: ['string', 'null'] },
+      },
+    });
+    expect(schema).toEqual({
+      type: 'object', additionalProperties: false, required: ['items', 'score', 'quote'],
+      properties: {
+        items: { type: 'array', items: { type: 'string' } },
+        score: { type: 'integer' },
+        quote: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+    });
   });
 });

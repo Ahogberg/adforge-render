@@ -55,7 +55,9 @@ export async function createApp() {
   app.get('/health', (_request, response) => response.json({
     status: 'ok',
     service: 'adforge-production-engine',
-    mode: config.openaiKey ? 'live' : 'demo',
+    mode: config.anthropicKey ? 'live' : 'demo',
+    contentModel: config.anthropicKey ? config.contentModel : 'demo',
+    transcription: config.openaiKey ? 'audio-and-video' : 'pasted-transcripts-only',
     outreach: outreachSendsAutomatically() ? 'resend' : 'manual',
     applicationEmails: config.resendKey && config.intakeFrom ? 'on' : 'off',
     operatorAlerts: config.resendKey && config.intakeFrom && config.intakeNotifyTo ? 'on' : 'off',
@@ -65,7 +67,7 @@ export async function createApp() {
   app.post('/api/intake', intakeLimiter, upload.single('sourceFile'), asyncHandler(async (request, response) => {
     const intake = intakeSchema.parse(normalizeIntake(request.body));
     // Real applications are always live projects. Production only runs when the operator starts it,
-    // and the writer falls back to demo output only if no OpenAI key is configured at that moment.
+    // and the writer falls back to demo output only if no Anthropic key is configured at that moment.
     let project = await store.create(intake, 'live');
     if (request.file) project = await store.update(project.id, { sourceFile: request.file.path });
     project = await linkReferral(project);
@@ -137,7 +139,7 @@ export async function createApp() {
   app.get('/api/prospects', asyncHandler(async (_request, response) => response.json(await prospectStore.list())));
   app.post('/api/prospects', asyncHandler(async (request, response) => {
     const input = prospectInputSchema.parse(request.body);
-    try { response.status(201).json(await prospectStore.create(input, config.openaiKey ? 'live' : 'demo')); }
+    try { response.status(201).json(await prospectStore.create(input, config.anthropicKey ? 'live' : 'demo')); }
     catch (error) {
       if (error instanceof SuppressedContactError) return response.status(409).json({ error: error.message });
       throw error;
@@ -150,7 +152,7 @@ export async function createApp() {
     if (!rows.length) return response.status(400).json({ error: 'Upload a CSV file or send a JSON array' });
     if (rows.length > 500) return response.status(400).json({ error: 'Import is limited to 500 prospects per batch' });
     const inputs = rows.map((row) => prospectInputSchema.parse(normalizeProspectRow(row)));
-    const result = await prospectStore.createMany(inputs, config.openaiKey ? 'live' : 'demo');
+    const result = await prospectStore.createMany(inputs, config.anthropicKey ? 'live' : 'demo');
     response.status(201).json({ created: result.created.length, duplicates: result.duplicates, suppressed: result.suppressed, prospectIds: result.created.map((item) => item.id) });
   }));
   app.post('/api/prospects/batch/generate', asyncHandler(async (request, response) => {

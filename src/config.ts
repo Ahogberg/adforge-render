@@ -14,8 +14,10 @@ export const config = {
     .filter(Boolean),
   publicUrl: process.env.ADFORGE_PUBLIC_URL || 'http://localhost:3001',
   marketingUrl: process.env.ADFORGE_MARKETING_URL || 'https://afterwordmonthly.com',
+  anthropicKey: process.env.ANTHROPIC_API_KEY || '',
+  contentModel: process.env.CLAUDE_CONTENT_MODEL || 'claude-opus-5-5',
+  /** Only used to transcribe uploaded audio and video; pasted transcripts need no OpenAI key. */
   openaiKey: process.env.OPENAI_API_KEY || '',
-  contentModel: process.env.OPENAI_CONTENT_MODEL || 'gpt-5.6-luna',
   transcriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe-diarize',
   dataDir: path.resolve(process.cwd(), 'data'),
   uploadDir: path.resolve(process.cwd(), 'uploads'),

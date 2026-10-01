@@ -8,7 +8,7 @@ It also includes the acquisition layer: import source-qualified prospects, score
 
 - Public multipart intake endpoint for a transcript or source file
 - Safe brand-signal extraction with DNS and browser-request SSRF protection
-- Speaker-aware transcription and structured campaign generation when OpenAI is configured
+- Structured campaign generation with Claude, plus speaker-aware transcription of uploaded audio and video when OpenAI is configured
 - Fully functional demo mode when no API key is present
 - Deterministic editorial QA gates before anything reaches a client
 - Branded A4 PDF, HTML landing page, Markdown assets, source map, and ZIP delivery
@@ -33,7 +33,7 @@ Open `http://localhost:3001`. The default local operator key is `local-adforge-d
 
 The dashboard opens on **Prospect engine**. Click **Create demo prospect** to exercise qualification and preview generation. Import `examples/prospects.csv` to see the required bulk format.
 
-For live projects, set `OPENAI_API_KEY`. The content and transcription model names are configurable through the environment. Uploaded source material may be audio, video, PDF, or presentation media; live transcription currently applies to audio/video files. A pasted transcript is the most deterministic input.
+For live projects, set `ANTHROPIC_API_KEY`; Claude (`CLAUDE_CONTENT_MODEL`, default `claude-opus-5-5`) writes every campaign, prospect preview and revision lesson. Claude does not transcribe audio, so uploaded audio and video need `OPENAI_API_KEY` for transcription; without it, paste a transcript, which is also the most deterministic input. A live project with an upload but no transcription key stops with a clear error instead of producing demo content.
 
 ## API flow
 
@@ -75,6 +75,7 @@ docker run --rm -p 3001:3001 \
   -e ADFORGE_OPERATOR_KEY='replace-with-a-long-secret' \
   -e ADFORGE_PUBLIC_URL='https://production.example.com' \
   -e ADFORGE_ALLOWED_ORIGINS='https://www.example.com' \
+  -e ANTHROPIC_API_KEY='...' \
   -e OPENAI_API_KEY='...' \
   -e RESEND_API_KEY='...' \
   -e ADFORGE_OUTREACH_FROM='Afterword <hello@your-domain.com>' \

@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { config } from './config.js';
 import { MAX_TRANSCRIPT_CHARS } from './quality.js';
@@ -16,7 +17,11 @@ import {
   type ProspectQualification,
 } from './types.js';
 
-const client = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : undefined;
+/** Claude writes all content. OpenAI is only used to transcribe uploaded audio and video. */
+const claude = config.anthropicKey ? new Anthropic({ apiKey: config.anthropicKey }) : undefined;
+const transcriber = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : undefined;
+
+type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 const bundleJsonSchema = {
   type: 'object', additionalProperties: false,
@@ -125,11 +130,12 @@ const prospectJsonSchema = {
   },
 } as const;
 
-export function isLiveAi(): boolean { return Boolean(client); }
+export function isLiveAi(): boolean { return Boolean(claude); }
 
 export async function transcribeFile(filePath: string): Promise<string> {
-  if (!client) return demoTranscript;
-  const response = await client.audio.transcriptions.create({
+  if (filePath === 'demo' || !claude) return demoTranscript;
+  if (!transcriber) throw new Error('Uploaded audio and video need OPENAI_API_KEY for transcription. Paste a transcript into the project instead.');
+  const response = await transcriber.audio.transcriptions.create({
     file: createReadStream(filePath),
     model: config.transcriptionModel,
     response_format: 'diarized_json',
@@ -162,13 +168,13 @@ const STYLE_RULES = `Use clear international English. Write like a senior practi
  * write the guide, derive posts, emails and landing copy from the guide, then run an editor pass.
  */
 export async function generateCampaign(context: CampaignContext): Promise<CampaignBundle> {
-  if (!client) return createDemoBundle(context.intake, context.transcript, context.revisionNote ?? '');
+  if (!claude) return createDemoBundle(context.intake, context.transcript, context.revisionNote ?? '');
   const stage = async (message: string) => { await context.onStage?.(message); };
   const brief = clientBrief(context);
 
   await stage('Extracting ideas and verbatim quotes from the source');
   const ideas = await structured<unknown>('adforge_source_ideas', ideasJsonSchema,
-    `You are the research editor inside Afterword. Read the full transcript and extract the ideas worth publishing, in the speaker's own framing. ${SOURCE_RULES} Prefer specific, contrarian, or experience-based points over generic advice. Record the speaker's own recurring terms.`,
+    `You are the research editor inside Afterword. Read the full transcript and extract the ideas worth publishing, in the speaker's own framing. ${SOURCE_RULES} Prefer specific, contrarian, or experience-based points over generic advice. Record the speaker's own recurring terms. Return 2 to 4 thesis candidates, 5 to 14 numbered ideas with at most 4 quotes each, and up to 20 speaker terms.`,
     `${brief}\n\nSOURCE TRANSCRIPT\n${context.transcript.slice(0, MAX_TRANSCRIPT_CHARS)}`);
 
   await stage('Choosing one thesis and planning the campaign');
@@ -178,13 +184,13 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
 
   await stage('Writing the premium guide');
   const guide = await structured<Record<string, unknown>>('adforge_campaign_guide', guideJsonSchema,
-    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES} Each section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Pull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
+    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES} Each section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Pull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. Add an action checklist of 4 to 8 items and at most 20 source references. ${STYLE_RULES}`,
     `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nEXTRACTED IDEAS AND QUOTES\n${JSON.stringify(ideas)}`);
 
   await stage('Writing LinkedIn posts, emails, and landing copy');
   const expert = context.client?.expertName || context.intake.expertName || 'the expert speaker';
   const derived = await structured<Record<string, unknown>>('adforge_campaign_derivatives', derivativesJsonSchema,
-    `You write distribution copy for Afterword. LinkedIn posts and emails are written in the first person as ${expert}, matching the voice reference closely (sentence length, directness, vocabulary, formatting). Each LinkedIn post carries its planned angle, stands alone without the guide, is 120 to 220 words, opens with a specific first line rather than a generic claim, and uses short paragraphs. Emails have one job each (deliver the guide, develop its sharpest idea, invite the next step) and are under 180 words. Landing copy is labelled blocks for a guide download page. ${SOURCE_RULES} ${STYLE_RULES}`,
+    `You write distribution copy for Afterword. LinkedIn posts and emails are written in the first person as ${expert}, matching the voice reference closely (sentence length, directness, vocabulary, formatting). Each LinkedIn post carries its planned angle, stands alone without the guide, is 120 to 220 words, opens with a specific first line rather than a generic claim, and uses short paragraphs. Emails have one job each (deliver the guide, develop its sharpest idea, invite the next step) and are under 180 words. Landing copy is labelled blocks for a guide download page with 3 to 5 bullets. Return exactly eight LinkedIn posts and exactly three emails. ${SOURCE_RULES} ${STYLE_RULES}`,
     `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nFINISHED GUIDE\n${JSON.stringify(guide)}`);
 
   const draft = normalizeBundle({ campaignAngle: plan.campaignAngle, title: plan.title, subtitle: plan.subtitle, ...guide, ...derived });
@@ -199,7 +205,7 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
 
 /** Targeted rewrite after a failed quality gate; far cheaper than regenerating the campaign. */
 export async function repairCampaign(context: CampaignContext, bundle: CampaignBundle, failures: string[]): Promise<CampaignBundle> {
-  if (!client) return bundle;
+  if (!claude) return bundle;
   await context.onStage?.('Repairing the draft after a failed quality gate');
   return editBundle(context, bundle, [
     'The draft failed automated checks. Fix exactly these problems and change nothing else:',
@@ -210,10 +216,10 @@ export async function repairCampaign(context: CampaignContext, bundle: CampaignB
 
 /** Distils a client's revision note into durable rules for future months. */
 export async function distilRevision(note: string, memory: ClientMemory): Promise<Pick<ClientMemory, 'terminology' | 'bannedPhrases' | 'styleNotes'>> {
-  if (!client) return { terminology: [], bannedPhrases: [], styleNotes: [] };
+  if (!claude) return { terminology: [], bannedPhrases: [], styleNotes: [] };
   return structured('adforge_revision_lessons', lessonsJsonSchema,
-    `You maintain a client's editorial memory. From one revision note, extract only durable preferences that should apply to future months: terminology rules ("Say X, not Y"), phrases to never use, and general style notes. Ignore one-off content edits and factual fixes about this month's material. Do not repeat rules already in memory. Return empty arrays when nothing is durable.`,
-    `CURRENT MEMORY\n${JSON.stringify({ terminology: memory.terminology, bannedPhrases: memory.bannedPhrases, styleNotes: memory.styleNotes })}\n\nREVISION NOTE\n${note}`);
+    `You maintain a client's editorial memory. From one revision note, extract only durable preferences that should apply to future months: terminology rules ("Say X, not Y"), phrases to never use, and general style notes. Ignore one-off content edits and factual fixes about this month's material. Do not repeat rules already in memory. Return at most 10 items per list, and empty arrays when nothing is durable.`,
+    `CURRENT MEMORY\n${JSON.stringify({ terminology: memory.terminology, bannedPhrases: memory.bannedPhrases, styleNotes: memory.styleNotes })}\n\nREVISION NOTE\n${note}`, 'medium');
 }
 
 async function editBundle(context: CampaignContext, bundle: CampaignBundle, tasks: string[], includeTranscript = false): Promise<CampaignBundle> {
@@ -243,17 +249,51 @@ function clientBrief(context: CampaignContext): string {
   ].join('\n\n');
 }
 
-async function structured<T>(name: string, schema: object, instructions: string, input: string): Promise<T> {
-  if (!client) throw new Error('Structured generation requires OPENAI_API_KEY');
-  const response = await client.responses.create({
+/**
+ * One Claude call with a JSON-schema response. Streams so long campaigns cannot hit request
+ * timeouts, and opts into server-side fallbacks so a classifier decline is retried on the model
+ * Anthropic recommends for that category instead of failing the production run.
+ */
+async function structured<T>(name: string, schema: object, instructions: string, input: string, effort: Effort = 'high'): Promise<T> {
+  if (!claude) throw new Error('Structured generation requires ANTHROPIC_API_KEY');
+  const message = await claude.beta.messages.stream({
     model: config.contentModel,
-    store: false,
-    instructions,
-    input,
-    text: { format: { type: 'json_schema', name, strict: true, schema: schema as Record<string, unknown> } },
-  });
-  if (!response.output_text) throw new Error(`The content model returned no output (${name})`);
-  return JSON.parse(response.output_text) as T;
+    max_tokens: 64_000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    system: instructions,
+    messages: [{ role: 'user', content: input }],
+    output_config: { effort, format: { type: 'json_schema', schema: toClaudeSchema(schema) as Record<string, unknown> } },
+  }).finalMessage();
+  if (message.stop_reason === 'refusal') {
+    throw new Error(`Claude declined the ${name} step${message.stop_details?.category ? ` (${message.stop_details.category})` : ''}`);
+  }
+  if (message.stop_reason === 'max_tokens') throw new Error(`Claude ran out of output space in the ${name} step`);
+  const text = message.content.find((block) => block.type === 'text');
+  if (!text || text.type !== 'text' || !text.text.trim()) throw new Error(`The content model returned no output (${name})`);
+  return JSON.parse(text.text) as T;
+}
+
+/**
+ * Structured outputs accept a subset of JSON Schema: count and range constraints are not
+ * supported and nullable fields are written as anyOf. Counts stay in the prompts and are
+ * enforced again by the zod schemas when the result is parsed.
+ */
+export function toClaudeSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toClaudeSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+  const unsupported = new Set(['minItems', 'maxItems', 'minimum', 'maximum', 'minLength', 'maxLength']);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (unsupported.has(key)) continue;
+    result[key] = toClaudeSchema(value);
+  }
+  if (Array.isArray(result.type)) {
+    const types = result.type as string[];
+    delete result.type;
+    return { ...result, anyOf: types.map((type) => ({ type })) };
+  }
+  return result;
 }
 
 function normalizeBundle(value: unknown): CampaignBundle {
@@ -272,16 +312,10 @@ export async function generateProspectPreview(
   input: ProspectInput,
   brand: BrandProfile,
 ): Promise<{ qualification: ProspectQualification; preview: ProspectPreview }> {
-  if (!client) return createDemoProspectPreview(input, brand);
-  const response = await client.responses.create({
-    model: config.contentModel,
-    store: false,
-    instructions: `You are the research editor for Afterword, a productized B2B content service. Qualify one company and create a highly specific campaign preview from supplied evidence only. The ideal customer is an English-speaking boutique consultancy, training firm, or expert-led professional-services company with a high-value offer and useful long-form source material. Never invent revenue, team size, customers, outcomes, quotes, or facts. Do not flatter. Reject weak fits. The outreach email must be plain text, under 120 words, mention the exact source title naturally, explain one observed content opportunity, link conceptually to the preview, state the $1,500/month price, and end with a low-friction asynchronous question. Do not request a meeting.`,
-    input: `COMPANY\n${input.companyName}\nWebsite: ${input.website}\nContact: ${input.contactName || 'Unknown'}${input.role ? `, ${input.role}` : ''}\nCountry: ${input.country || 'Unknown'}\nOffer hint: ${input.offerHint || 'Infer cautiously from supplied website signals'}\nNotes: ${input.notes || 'None'}\n\nPUBLIC SOURCE\nTitle: ${input.sourceTitle}\nURL: ${input.sourceUrl}\nOperator-supplied summary/excerpt:\n${input.sourceSummary}\n\nWEBSITE SIGNALS\nTitle: ${brand.title}\nDescription: ${brand.description}\nVisible copy excerpt: ${brand.voiceSample.slice(0, 8_000)}`,
-    text: { format: { type: 'json_schema', name: 'adforge_prospect_preview', strict: true, schema: prospectJsonSchema } },
-  });
-  if (!response.output_text) throw new Error('The prospect model returned no output');
-  const parsed = JSON.parse(response.output_text) as { qualification?: unknown; preview?: unknown };
+  if (!claude) return createDemoProspectPreview(input, brand);
+  const parsed = await structured<{ qualification?: unknown; preview?: unknown }>('adforge_prospect_preview', prospectJsonSchema,
+    `You are the research editor for Afterword, a productized B2B content service. Qualify one company and create a highly specific campaign preview from supplied evidence only. The ideal customer is an English-speaking boutique consultancy, training firm, or expert-led professional-services company with a high-value offer and useful long-form source material. Never invent revenue, team size, customers, outcomes, quotes, or facts. Do not flatter. Reject weak fits. Score fit from 0 to 100. Give exactly three article angles and three LinkedIn hooks. The outreach email must be plain text, under 120 words, mention the exact source title naturally, explain one observed content opportunity, link conceptually to the preview, state the $1,500/month price, and end with a low-friction asynchronous question. Do not request a meeting.`,
+    `COMPANY\n${input.companyName}\nWebsite: ${input.website}\nContact: ${input.contactName || 'Unknown'}${input.role ? `, ${input.role}` : ''}\nCountry: ${input.country || 'Unknown'}\nOffer hint: ${input.offerHint || 'Infer cautiously from supplied website signals'}\nNotes: ${input.notes || 'None'}\n\nPUBLIC SOURCE\nTitle: ${input.sourceTitle}\nURL: ${input.sourceUrl}\nOperator-supplied summary/excerpt:\n${input.sourceSummary}\n\nWEBSITE SIGNALS\nTitle: ${brand.title}\nDescription: ${brand.description}\nVisible copy excerpt: ${brand.voiceSample.slice(0, 8_000)}`);
   return {
     qualification: prospectQualificationSchema.parse(parsed.qualification),
     preview: prospectPreviewSchema.parse(parsed.preview),
@@ -311,7 +345,7 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
   const sections = sectionSeeds.map(([title, body], index) => ({
     eyebrow: `Principle ${String(index + 1).padStart(2, '0')}`,
     title,
-    body: [body, `This section is generated in demo mode from the project brief. Connect an OpenAI API key to ground the final editorial version in the full source transcript.`],
+    body: [body, `This section is generated in demo mode from the project brief. Connect an Anthropic API key to ground the final editorial version in the full source transcript.`],
     pullQuote: index === 0 ? demoPullQuote(transcript) : undefined,
     sourceTimestamp: transcript ? `[demo ${index + 1}:00]` : undefined,
   }));
