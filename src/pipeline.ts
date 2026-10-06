@@ -1,6 +1,6 @@
 import { scrapeBrand } from './brand.js';
 import { config } from './config.js';
-import { generateCampaign, repairCampaign, transcribeFile, type CampaignContext } from './ai.js';
+import { demoSourceTranscript, generateCampaign, repairCampaign, transcribeFile, type CampaignContext } from './ai.js';
 import { ClientStore } from './client-store.js';
 import { inspectCampaign } from './quality.js';
 import { renderArtifacts } from './render.js';
@@ -54,7 +54,8 @@ export class ProductionPipeline {
       let transcript = project.transcript;
       if (!transcript && project.sourceFile) transcript = await transcribeFile(project.sourceFile);
       if (!transcript) {
-        if (project.mode === 'demo') transcript = await transcribeFile('demo');
+        // Demo projects have no upload; never send a placeholder path to the transcription API.
+        if (project.mode === 'demo') transcript = demoSourceTranscript();
         else throw new Error('A source upload or transcript is required before production can begin');
       }
       project = await this.store.update(projectId, { transcript });
