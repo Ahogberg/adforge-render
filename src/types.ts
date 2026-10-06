@@ -39,12 +39,53 @@ export const sourceReferenceSchema = z.object({
   timestamp: z.string(),
 });
 
+export const SECTION_LAYOUTS = ['essay', 'framework', 'stat', 'comparison'] as const;
+
+export const frameworkSchema = z.object({
+  name: z.string(),
+  kind: z.enum(['sequence', 'pillars']),
+  items: z.array(z.object({ label: z.string(), detail: z.string() })).min(2).max(6),
+});
+
+export const statSchema = z.object({
+  /** The figure exactly as the speaker said it, e.g. "31 of 40" or "40%". Verified against the transcript. */
+  value: z.string(),
+  label: z.string(),
+  context: z.string(),
+  sourceTimestamp: z.string(),
+});
+
+export const comparisonSchema = z.object({
+  leftLabel: z.string(),
+  rightLabel: z.string(),
+  rows: z.array(z.object({ left: z.string(), right: z.string() })).min(2).max(6),
+});
+
 export const sectionSchema = z.object({
   eyebrow: z.string(),
   title: z.string(),
   body: z.array(z.string()),
   pullQuote: z.string().nullable().optional().transform((value) => value ?? undefined),
   sourceTimestamp: z.string().nullable().optional().transform((value) => value ?? undefined),
+  /** Page layout for the section; undefined means a plain essay page. */
+  layout: z.enum(SECTION_LAYOUTS).nullable().optional().transform((value) => value ?? undefined),
+  framework: frameworkSchema.nullable().optional().transform((value) => value ?? undefined),
+  stat: statSchema.nullable().optional().transform((value) => value ?? undefined),
+  comparison: comparisonSchema.nullable().optional().transform((value) => value ?? undefined),
+}).transform((section) => ({ ...section, layout: effectiveLayout(section) }));
+
+/** A layout without its feature block falls back to a plain essay page. */
+export function effectiveLayout(section: { layout?: SectionLayout | null; framework?: unknown; stat?: unknown; comparison?: unknown }): SectionLayout {
+  if (section.layout === 'framework' && section.framework) return 'framework';
+  if (section.layout === 'stat' && section.stat) return 'stat';
+  if (section.layout === 'comparison' && section.comparison) return 'comparison';
+  return 'essay';
+}
+
+export const carouselSchema = z.object({
+  title: z.string(),
+  slides: z.array(z.object({ heading: z.string(), body: z.string() })).min(3).max(8),
+  closing: z.string(),
 });
 
 export const campaignBundleSchema = z.object({
@@ -65,6 +106,8 @@ export const campaignBundleSchema = z.object({
     buttonLabel: z.string(),
   }),
   sourceReferences: z.array(sourceReferenceSchema).max(20),
+  /** LinkedIn document carousel derived from the guide. Older campaigns have none. */
+  carousel: carouselSchema.nullable().optional().transform((value) => value ?? undefined),
 });
 
 export const qualityReportSchema = z.object({
@@ -75,7 +118,29 @@ export const qualityReportSchema = z.object({
 
 export type ProjectStatus = z.infer<typeof projectStatusSchema>;
 export type Intake = z.infer<typeof intakeSchema>;
-export type CampaignBundle = z.infer<typeof campaignBundleSchema>;
+export type SectionLayout = (typeof SECTION_LAYOUTS)[number];
+export type Framework = z.infer<typeof frameworkSchema>;
+export type Stat = z.infer<typeof statSchema>;
+export type Comparison = z.infer<typeof comparisonSchema>;
+export type Carousel = z.infer<typeof carouselSchema>;
+
+/** Sections written before layouts existed have no layout fields; all of them are optional. */
+export interface CampaignSection {
+  eyebrow: string;
+  title: string;
+  body: string[];
+  pullQuote?: string;
+  sourceTimestamp?: string;
+  layout?: SectionLayout;
+  framework?: Framework;
+  stat?: Stat;
+  comparison?: Comparison;
+}
+
+export type CampaignBundle = Omit<z.infer<typeof campaignBundleSchema>, 'sections' | 'carousel'> & {
+  sections: CampaignSection[];
+  carousel?: Carousel;
+};
 export type QualityReport = z.infer<typeof qualityReportSchema>;
 
 export interface BrandProfile {
@@ -86,9 +151,37 @@ export interface BrandProfile {
   backgroundColor: string;
   textColor: string;
   fontFamily: string;
+  /** Computed font-family of the website's main heading; used to match the display face. */
+  headingFontFamily?: string;
   borderRadius: string;
   voiceSample: string;
   sourceUrl: string;
+}
+
+export interface VideoArtifact {
+  file: string;
+  poster: string;
+  title: string;
+  kind: 'stat' | 'quote' | 'speaker' | 'audiogram';
+  durationSeconds: number;
+  /** Source window for speaker clips, in seconds. */
+  sourceStart?: number;
+  sourceEnd?: number;
+}
+
+export interface ProjectArtifacts {
+  pdf: string;
+  landingPage: string;
+  deliveryZip: string;
+  carouselPdf?: string;
+  carouselSlides?: string[];
+  postCards?: string[];
+  motionClips?: VideoArtifact[];
+  speakerClips?: VideoArtifact[];
+  /** Typography and palette decisions, for the operator. */
+  designSummary?: string;
+  /** Non-blocking render problems the operator should know about. */
+  notes?: string[];
 }
 
 export interface ProjectEvent {
@@ -111,11 +204,7 @@ export interface Project {
   brand?: BrandProfile;
   bundle?: CampaignBundle;
   quality?: QualityReport;
-  artifacts?: {
-    pdf: string;
-    landingPage: string;
-    deliveryZip: string;
-  };
+  artifacts?: ProjectArtifacts;
   events: ProjectEvent[];
   revisionNote?: string;
   revisionCount?: number;

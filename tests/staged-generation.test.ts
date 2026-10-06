@@ -3,15 +3,17 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 const calls: Array<{ name: string; instructions: string; input: string }> = [];
 
 const post = (index: number) => ({ hook: `Specific hook ${index}`, body: 'Post body', cta: 'Reply' });
-const section = (index: number) => ({ eyebrow: `P${index}`, title: `Section ${index}`, body: ['Body'], pullQuote: null, sourceTimestamp: null });
+const section = (index: number) => ({ eyebrow: `P${index}`, title: `Section ${index}`, body: ['Body'], pullQuote: null, sourceTimestamp: null, layout: 'essay', framework: null, stat: null, comparison: null });
+const statSection = { ...section(1), layout: 'stat', stat: { value: '31 of 40', label: 'webinars were never reused', context: 'One year of client webinars', sourceTimestamp: '00:00' } };
 const outputs: Record<string, unknown> = {
   adforge_source_ideas: { thesisCandidates: ['A', 'B'], ideas: [], speakerTerms: ['handover gap'] },
   adforge_campaign_plan: { thesis: 'T', campaignAngle: 'Planned angle', title: 'Planned title', subtitle: 'Planned subtitle', sections: [], postAngles: [], emailPlan: [] },
-  adforge_campaign_guide: { executiveSummary: 'Summary', sections: [0, 1, 2, 3].map(section), actionChecklist: ['1', '2', '3', '4'], sourceReferences: [] },
+  adforge_campaign_guide: { executiveSummary: 'Summary', sections: [section(0), statSection, section(2), section(3)], actionChecklist: ['1', '2', '3', '4'], sourceReferences: [] },
   adforge_campaign_derivatives: {
     linkedinPosts: Array.from({ length: 8 }, (_, index) => post(index)),
     emails: Array.from({ length: 3 }, () => ({ subject: 'S', preview: 'P', body: 'B', cta: 'C' })),
     landingPage: { eyebrow: 'E', headline: 'H', subheadline: 'S', bullets: ['a', 'b', 'c'], formHeading: 'F', buttonLabel: 'Get it' },
+    carousel: { title: 'The handover gap', slides: [{ heading: 'One', body: 'A' }, { heading: 'Two', body: 'B' }, { heading: 'Three', body: 'C' }], closing: 'Get the guide' },
   },
   adforge_revision_lessons: { terminology: ['Say clients, not customers'], bannedPhrases: [], styleNotes: [] },
 };
@@ -63,6 +65,11 @@ describe('staged campaign generation', () => {
       expect(call.input).toContain('Never call the method a framework.');
     }
     expect(calls[3]?.instructions).toContain('first person as Ann Holm');
+    expect(calls[2]?.instructions).toContain('stat: only when the speaker states a specific figure');
+    expect(calls[3]?.instructions).toContain('The carousel is a LinkedIn document post');
+    expect(bundle.sections[1]).toMatchObject({ layout: 'stat', stat: { value: '31 of 40' } });
+    expect(bundle.sections[0]?.layout).toBe('essay');
+    expect(bundle.carousel?.slides).toHaveLength(3);
     expect(calls[0]?.input).toContain('The handover gap is where pricing changes die.');
   });
 

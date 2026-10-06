@@ -2,101 +2,210 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{bundle.title}}</title>
+  <title>{{bundle.title}} — {{company}}</title>
   <style>
-    :root { --brand: {{brand.accentColor}}; --on-brand: {{brand.onAccentColor}}; --ink: #121414; --paper: #f6f2e9; --muted: #6f716d; }
+    {{{design.type.css}}}
+    {{{design.cssVariables}}}
     * { box-sizing: border-box; }
     @page { size: A4; margin: 0; }
-    body { margin: 0; color: var(--ink); background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    .page { width: 210mm; height: 297mm; padding: 19mm 18mm 17mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; }
+    html { -webkit-font-smoothing: antialiased; }
+    body { margin: 0; color: var(--ink); background: #fff; font-family: var(--font-text); font-size: 10.4pt; line-height: 1.62; print-color-adjust: exact; -webkit-print-color-adjust: exact; font-kerning: normal; font-variant-ligatures: common-ligatures; }
+    h1, h2, h3, .display { font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); text-wrap: balance; margin: 0; }
+    p { margin: 0; text-wrap: pretty; }
+    .n, .num, .pg, .folio b, .stat .value, .source-chip { font-variant-numeric: lining-nums tabular-nums; }
+
+    .page { width: 210mm; height: 297mm; padding: 20mm 18mm 24mm; position: relative; overflow: hidden; page-break-after: always; background: #fff; display: flex; flex-direction: column; }
     .page:last-child { page-break-after: auto; }
-    .folio { position: absolute; left: 18mm; right: 18mm; bottom: 10mm; padding-top: 4mm; border-top: .25mm solid #ddd7cc; display: flex; justify-content: space-between; color: #aaa69f; font-size: 8pt; letter-spacing: .08em; text-transform: uppercase; }
-    .folio b { color: var(--brand); }
-    .cover { color: #f7f3ea; background: #101212; display: flex; flex-direction: column; justify-content: space-between; }
-    .cover::after { content: ''; position: absolute; width: 150mm; height: 150mm; right: -70mm; top: 30mm; border: .3mm solid color-mix(in srgb, var(--brand) 35%, transparent); border-radius: 50%; box-shadow: 0 0 0 25mm color-mix(in srgb, var(--brand) 4%, transparent), 0 0 0 50mm color-mix(in srgb, var(--brand) 2%, transparent); }
-    .cover > * { position: relative; z-index: 1; }
-    .logo { font-size: 9pt; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-    .cover-copy { max-width: 155mm; }
-    .kicker, .eyebrow { color: var(--brand); font-size: 8pt; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
-    h1 { margin: 7mm 0 6mm; font-family: Georgia, serif; font-size: 37pt; line-height: 1.08; font-weight: 400; letter-spacing: -.035em; }
-    .cover .subtitle { max-width: 125mm; color: #aaa9a3; font-size: 13pt; line-height: 1.6; }
-    .cover-meta { display: flex; justify-content: space-between; align-items: end; padding-top: 7mm; border-top: .25mm solid #343737; color: #797c79; font-size: 8pt; line-height: 1.6; }
-    .intro { background: var(--paper); display: grid; grid-template-columns: 1fr 52mm; gap: 16mm; }
-    .intro h2, .contents h2, .content h2, .checklist h2 { margin: 5mm 0 8mm; font: 400 27pt/1.15 Georgia, serif; letter-spacing: -.025em; }
-    .intro p, .content p { color: #4d504d; font-size: 10.5pt; line-height: 1.75; }
-    .intro-aside { border-left: .7mm solid var(--brand); padding-left: 7mm; }
-    .intro-aside span { display: block; margin-bottom: 3mm; color: #8f8e88; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .12em; }
-    .intro-aside strong { font: 400 16pt/1.35 Georgia, serif; }
-    .contents { background: #fff; }
-    .contents-list { list-style: none; margin: 17mm 0 0; padding: 0; border-top: .25mm solid #ddd7cc; }
-    .contents-list li { padding: 5mm 0; display: grid; grid-template-columns: 11mm 1fr auto; gap: 5mm; border-bottom: .25mm solid #ddd7cc; align-items: baseline; }
-    .contents-list span:first-child { color: var(--brand); font: 400 11pt Georgia, serif; }
-    .contents-list b { font-size: 10pt; }
-    .contents-list small { color: #99958d; font-size: 8pt; }
-    .content { display: flex; flex-direction: column; }
-    .section-number { color: #ddd8ce; font: 700 50pt/1 var(--font, Arial); margin-bottom: 9mm; }
-    .body-copy { columns: 2; column-gap: 12mm; column-rule: .25mm solid #ece8df; }
-    .body-copy p { margin: 0 0 5mm; break-inside: avoid; }
-    blockquote { margin: auto 0 13mm; padding: 7mm 0 0 8mm; border-left: .8mm solid var(--brand); font: italic 17pt/1.45 Georgia, serif; }
-    blockquote small { display: block; margin-top: 3mm; color: #99958d; font: 7.5pt Arial, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
-    .checklist { background: #101212; color: #f7f3ea; }
-    .checklist h2 { max-width: 145mm; font-size: 31pt; }
-    .checks { margin-top: 16mm; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12mm; }
-    .check { padding: 7mm 0; border-top: .25mm solid #353838; display: grid; grid-template-columns: 10mm 1fr; gap: 4mm; color: #b9bab6; font-size: 10.5pt; line-height: 1.55; }
-    .check b { width: 7mm; height: 7mm; border: .5mm solid var(--brand); color: var(--brand); display: grid; place-items: center; font-size: 7pt; }
-    .cta { background: var(--brand); color: var(--on-brand); display: flex; flex-direction: column; justify-content: center; }
-    .cta .eyebrow { color: var(--on-brand); opacity: .7; }
-    .cta h2 { max-width: 150mm; margin: 7mm 0; font: 400 34pt/1.1 Georgia, serif; letter-spacing: -.035em; }
-    .cta p { max-width: 125mm; font-size: 12pt; line-height: 1.7; color: var(--on-brand); opacity: .82; }
-    .cta-button { margin-top: 10mm; align-self: flex-start; padding: 5mm 8mm; background: var(--on-brand); color: var(--brand); font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .label { font-family: var(--font-text); font-size: 7.4pt; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; line-height: 1.3; }
+    .folio { position: absolute; left: 18mm; right: 18mm; bottom: 11mm; padding-top: 3.5mm; border-top: .25mm solid var(--rule); display: flex; justify-content: space-between; color: var(--muted); font-size: 7.2pt; letter-spacing: .1em; text-transform: uppercase; }
+    .folio b { color: var(--accent-text); font-weight: 600; letter-spacing: .04em; }
+
+    /* Cover */
+    .cover { background: var(--dark); color: var(--on-dark); padding: 18mm; }
+    .cover-top { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 5mm; border-bottom: .3mm solid var(--rule-on-dark); }
+    .cover-top .label:first-child { color: var(--on-dark); }
+    .cover-top .label:last-child { color: var(--muted-on-dark); }
+    .cover-main { margin-top: auto; }
+    .cover .kicker { color: var(--accent-on-dark); margin-bottom: 7mm; }
+    .cover h1 { font-size: 44pt; line-height: 1.02; max-width: 168mm; color: var(--on-dark); }
+    .cover .subtitle { margin-top: 8mm; max-width: 138mm; color: var(--muted-on-dark); font-size: 12.5pt; line-height: 1.5; }
+    .cover-wave { margin: 16mm 0 10mm; height: 30mm; }
+    .cover-wave svg { width: 100%; height: 100%; display: block; }
+    .cover-foot { display: flex; justify-content: space-between; padding-top: 5mm; border-top: .3mm solid var(--rule-on-dark); color: var(--muted-on-dark); }
+
+    /* Introduction and contents */
+    .intro { background: var(--paper); }
+    .intro .label { color: var(--accent-text); }
+    .intro h2 { margin-top: 6mm; font-size: 25pt; line-height: 1.14; max-width: 165mm; }
+    .intro .lede { margin-top: 7mm; max-width: 142mm; font-size: 12pt; line-height: 1.6; color: color-mix(in srgb, var(--ink) 82%, transparent); }
+    .intro-facts { margin-top: 11mm; display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; padding-top: 6mm; border-top: .25mm solid var(--rule); }
+    .intro-facts p { margin-top: 2.5mm; font-size: 10pt; line-height: 1.5; }
+    .intro-facts .label { color: var(--muted); }
+    .toc { margin-top: auto; }
+    .toc > .label { color: var(--muted); padding-bottom: 3mm; border-bottom: .25mm solid var(--ink); }
+    .toc ol { list-style: none; margin: 0; padding: 0; }
+    .toc li { display: grid; grid-template-columns: 12mm 1fr auto 12mm; gap: 4mm; align-items: baseline; padding: 3.6mm 0; border-bottom: .25mm solid var(--rule); }
+    .toc .n { font-family: var(--font-display); color: var(--accent-text); font-size: 11pt; }
+    .toc .t { font-family: var(--font-display); font-size: 12.5pt; letter-spacing: var(--display-tracking); line-height: 1.25; }
+    .toc .kind { color: var(--muted); font-size: 6.8pt; }
+    .toc .mini-box { display: inline-block; width: 3.2mm; height: 3.2mm; border: .35mm solid var(--accent-text); border-radius: .5mm; }
+    .toc .pg { text-align: right; color: var(--muted); font-size: 9pt; font-variant-numeric: tabular-nums; }
+
+    /* Section pages */
+    .sec-head { display: flex; align-items: baseline; gap: 4mm; padding-bottom: 4mm; border-bottom: .25mm solid var(--rule); }
+    .sec-head .n { font-family: var(--font-display); color: var(--accent-text); font-size: 11pt; }
+    .sec-head .label { color: var(--muted); }
+    .sec-title { margin-top: 11mm; font-size: 28pt; line-height: 1.08; max-width: 162mm; }
+    .flow { flex: 1; display: flex; flex-direction: column; margin-top: 9mm; min-height: 0; }
+    .flow > p { max-width: 128mm; margin-bottom: 4.2mm; color: color-mix(in srgb, var(--ink) 88%, transparent); }
+    .flow > p:first-child { font-size: 11.6pt; line-height: 1.58; color: var(--ink); }
+    .continued .flow > p:first-child { font-size: 10.4pt; line-height: 1.62; color: color-mix(in srgb, var(--ink) 88%, transparent); }
+    .feature { margin: 3mm 0 8mm; }
+
+    .source-chip { display: inline-flex; align-items: center; gap: 2mm; color: var(--muted); font-size: 7pt; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; }
+    .source-chip i { width: 1.6mm; height: 1.6mm; border-radius: 50%; background: var(--accent); }
+
+    blockquote.pull { margin: auto 0 0; padding-top: 7mm; border-top: .25mm solid var(--rule); display: grid; grid-template-columns: 12mm 1fr; gap: 3mm; }
+    blockquote.pull .mark { font-family: var(--font-display); color: var(--accent); font-size: 44pt; line-height: .8; }
+    blockquote.pull p { font-family: var(--font-display); font-style: {{#if design.type.displayItalicAvailable}}italic{{else}}normal{{/if}}; font-weight: var(--display-weight); font-size: 18.5pt; line-height: 1.32; letter-spacing: var(--display-tracking); max-width: 150mm; text-wrap: balance; }
+    blockquote.pull .source-chip { margin-top: 4mm; }
+
+    /* Stat */
+    .stat { display: grid; grid-template-columns: auto 1fr; gap: 10mm; align-items: center; padding: 10mm; background: var(--tint); border-radius: 1.5mm; }
+    .stat .value { font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: -.03em; color: var(--accent-text); line-height: .92; white-space: nowrap; font-variant-numeric: lining-nums; }
+    .stat .what { font-family: var(--font-display); font-size: 15pt; line-height: 1.25; letter-spacing: var(--display-tracking); }
+    .stat .context { margin-top: 3mm; color: var(--muted); font-size: 9.4pt; line-height: 1.45; }
+    .stat .source-chip { margin-top: 5mm; }
+
+    /* Framework */
+    .feature > .label { color: var(--accent-text); margin-bottom: 4.5mm; }
+    .steps { list-style: none; margin: 0; padding: 0; }
+    .steps li { position: relative; display: grid; grid-template-columns: 13mm 1fr; gap: 5mm; padding-bottom: 5.5mm; }
+    .steps li:not(:last-child)::before { content: ''; position: absolute; left: 6.25mm; top: 11mm; bottom: 0; width: .3mm; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .steps .num { width: 12.5mm; height: 12.5mm; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font-family: var(--font-display); font-size: 12pt; }
+    .steps h3 { font-size: 14pt; line-height: 1.2; padding-top: 1.6mm; }
+    .steps p { margin-top: 1.5mm; color: var(--muted); font-size: 9.6pt; line-height: 1.5; max-width: 125mm; }
+    .pillars { display: grid; gap: 4mm; }
+    .pillars.cols-2 { grid-template-columns: 1fr 1fr; }
+    .pillars.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .pillar { padding: 6mm 5.5mm 6.5mm; background: var(--tint); border-top: 1.1mm solid var(--accent); border-radius: 0 0 1.2mm 1.2mm; }
+    .pillar .num { font-family: var(--font-display); color: var(--accent-text); font-size: 10pt; }
+    .pillar h3 { margin-top: 7mm; font-size: 14pt; line-height: 1.18; }
+    .pillar p { margin-top: 2.5mm; color: var(--muted); font-size: 9.2pt; line-height: 1.48; }
+
+    /* Comparison */
+    .compare { width: 100%; border-collapse: collapse; font-size: 9.8pt; line-height: 1.45; }
+    .compare th { text-align: left; padding: 0 5mm 3mm; font-size: 7.2pt; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; border-bottom: .3mm solid var(--ink); }
+    .compare th:first-child { color: var(--muted); padding-left: 0; }
+    .compare th:last-child { color: var(--accent-text); }
+    .compare td { padding: 4mm 5mm; vertical-align: top; border-bottom: .25mm solid var(--rule); width: 50%; }
+    .compare td:first-child { color: var(--muted); padding-left: 0; }
+    .compare td:last-child { background: var(--tint); font-weight: 500; }
+
+    /* Checklist */
+    .checklist { background: var(--dark); color: var(--on-dark); }
+    .checklist .label { color: var(--accent-on-dark); }
+    .checklist h2 { margin-top: 6mm; font-size: 30pt; line-height: 1.08; max-width: 150mm; color: var(--on-dark); }
+    .checklist .lede { margin-top: 6mm; color: var(--muted-on-dark); font-size: 11pt; max-width: 130mm; }
+    .checks { list-style: none; margin: 14mm 0 0; padding: 0; border-top: .3mm solid var(--rule-on-dark); }
+    .checks li { display: grid; grid-template-columns: 9mm 1fr 34mm; gap: 5mm; align-items: center; padding: 6mm 0; border-bottom: .3mm solid var(--rule-on-dark); font-size: 11pt; line-height: 1.4; }
+    .checks .box { width: 6.5mm; height: 6.5mm; border: .45mm solid var(--accent-on-dark); border-radius: 1mm; }
+    .checks .owner { color: var(--muted-on-dark); font-size: 6.8pt; letter-spacing: .14em; text-transform: uppercase; border-bottom: .3mm dotted var(--rule-on-dark); padding-bottom: 1mm; }
+    .checklist .folio { border-color: var(--rule-on-dark); color: var(--muted-on-dark); }
+    .checklist .folio b { color: var(--accent-on-dark); }
+
+    /* Back cover */
+    .back { background: var(--accent); color: var(--on-accent); padding: 18mm; }
+    .back .top { display: flex; justify-content: space-between; padding-bottom: 5mm; border-bottom: .3mm solid color-mix(in srgb, var(--on-accent) 25%, transparent); }
+    .back-main { margin: auto 0; }
+    .back .label { opacity: .78; }
+    .back h2 { margin-top: 7mm; font-size: 36pt; line-height: 1.04; max-width: 165mm; }
+    .back p { margin-top: 7mm; max-width: 128mm; font-size: 12pt; line-height: 1.6; opacity: .88; }
+    .back .button { margin-top: 11mm; display: inline-flex; gap: 4mm; align-items: center; padding: 5mm 7mm; background: var(--on-accent); color: var(--accent); font-weight: 600; font-size: 11pt; letter-spacing: .01em; border-radius: 1mm; }
+    .back-wave { height: 14mm; opacity: .5; }
+    .back-wave svg { height: 100%; width: 100%; display: block; }
   </style>
 </head>
 <body>
   <section class="page cover">
-    <div class="logo">{{project.intake.companyName}}</div>
-    <div class="cover-copy">
-      <div class="kicker">A practical field guide</div>
+    <header class="cover-top"><span class="label">{{company}}</span><span class="label">Field guide · {{issueLabel}}</span></header>
+    <div class="cover-main">
+      <div class="label kicker">A field guide</div>
       <h1>{{bundle.title}}</h1>
-      <div class="subtitle">{{bundle.subtitle}}</div>
+      <p class="subtitle">{{bundle.subtitle}}</p>
     </div>
-    <div class="cover-meta"><span>Developed from original expert source material</span><span>Prepared by Afterword</span></div>
+    <div class="cover-wave">{{{coverWave}}}</div>
+    <footer class="cover-foot"><span class="label">{{sourceLine}}</span><span class="label">{{domain}}</span></footer>
   </section>
+
   <section class="page intro">
-    <div>
-      <div class="eyebrow">Executive summary</div>
-      <h2>{{bundle.campaignAngle}}</h2>
-      <p>{{bundle.executiveSummary}}</p>
+    <div class="label">Why this guide</div>
+    <h2>{{bundle.campaignAngle}}</h2>
+    <p class="lede">{{bundle.executiveSummary}}</p>
+    <div class="intro-facts">
+      <div><span class="label">Written for</span><p>{{project.intake.audience}}</p></div>
+      <div><span class="label">Built from</span><p>{{sourceSentence}}</p></div>
     </div>
-    <aside class="intro-aside"><span>Built for</span><strong>{{project.intake.audience}}</strong></aside>
-    <div class="folio"><span>{{project.intake.companyName}}</span><b>02</b></div>
+    <nav class="toc">
+      <div class="label">Inside</div>
+      <ol>{{#each sections}}<li data-toc="{{index}}"><span class="n">{{number}}</span><span class="t">{{title}}</span><span class="label kind">{{layoutLabel}}</span><span class="pg"></span></li>{{/each}}<li data-toc="checklist"><span class="n"><span class="mini-box"></span></span><span class="t">Your checklist</span><span class="label kind">Action</span><span class="pg"></span></li></ol>
+    </nav>
+    <div class="folio"><span>{{folioLabel}}</span><b>02</b></div>
   </section>
-  <section class="page contents">
-    <div class="eyebrow">Inside this guide</div>
-    <h2>A practical route through the central argument.</h2>
-    <ol class="contents-list">{{#each bundle.sections}}<li><span>{{number}}</span><b>{{title}}</b><small>{{#if sourceTimestamp}}{{sourceTimestamp}}{{else}}Source checked{{/if}}</small></li>{{/each}}</ol>
-    <div class="folio"><span>{{project.intake.companyName}}</span><b>03</b></div>
-  </section>
-  {{#each bundle.sections}}
-  <section class="page content">
-    <div class="section-number">{{number}}</div>
-    <div class="eyebrow">{{eyebrow}}</div>
-    <h2>{{title}}</h2>
-    <div class="body-copy">{{#each body}}<p>{{this}}</p>{{/each}}</div>
-    {{#if pullQuote}}<blockquote>“{{pullQuote}}”{{#if sourceTimestamp}}<small>Source reference {{sourceTimestamp}}</small>{{/if}}</blockquote>{{/if}}
-    <div class="folio"><span>{{../project.intake.companyName}}</span><b>{{folio}}</b></div>
+
+  {{#each sections}}
+  <section class="page content layout-{{layout}}" data-section-start="{{index}}" data-title="{{title}}">
+    <header class="sec-head"><span class="n">{{number}}</span><span class="label">{{eyebrow}}</span></header>
+    <h2 class="sec-title">{{title}}</h2>
+    <div class="flow">
+      {{#each leadParagraphs}}<p data-flow>{{this}}</p>{{/each}}
+      {{#if isStat}}
+      <div class="feature" data-flow>
+        <div class="stat">
+          <div class="value" style="font-size: {{stat.size}}pt">{{stat.value}}</div>
+          <div><p class="what">{{stat.label}}</p><p class="context">{{stat.context}}</p><span class="source-chip"><i></i>Said at {{stat.sourceTimestamp}}</span></div>
+        </div>
+      </div>
+      {{/if}}
+      {{#if isFramework}}
+      <div class="feature" data-flow>
+        <div class="label">{{framework.name}}</div>
+        {{#if framework.isSequence}}
+        <ol class="steps">{{#each framework.items}}<li><span class="num">{{n}}</span><div><h3>{{label}}</h3><p>{{detail}}</p></div></li>{{/each}}</ol>
+        {{else}}
+        <div class="pillars cols-{{framework.columns}}">{{#each framework.items}}<div class="pillar"><span class="num">{{n}}</span><h3>{{label}}</h3><p>{{detail}}</p></div>{{/each}}</div>
+        {{/if}}
+      </div>
+      {{/if}}
+      {{#if isComparison}}
+      <div class="feature" data-flow>
+        <table class="compare"><thead><tr><th>{{comparison.leftLabel}}</th><th>{{comparison.rightLabel}}</th></tr></thead><tbody>{{#each comparison.rows}}<tr><td>{{left}}</td><td>{{right}}</td></tr>{{/each}}</tbody></table>
+      </div>
+      {{/if}}
+      {{#each restParagraphs}}<p data-flow>{{this}}</p>{{/each}}
+      {{#if pullQuote}}<blockquote class="pull" data-flow><span class="mark">“</span><div><p>{{pullQuote}}</p>{{#if sourceTimestamp}}<span class="source-chip"><i></i>Source · {{sourceTimestamp}}</span>{{/if}}</div></blockquote>{{/if}}
+    </div>
+    <div class="folio"><span>{{../folioLabel}}</span><b>00</b></div>
   </section>
   {{/each}}
-  <section class="page checklist">
-    <div class="eyebrow">Implementation checklist</div>
-    <h2>Turn the central idea into a decision your team can use.</h2>
-    <div class="checks">{{#each bundle.actionChecklist}}<div class="check"><b>✓</b><span>{{this}}</span></div>{{/each}}</div>
-    <div class="folio"><span>{{project.intake.companyName}}</span><b>Action</b></div>
+
+  <section class="page checklist" data-section-start="checklist">
+    <div class="label">Put it to work</div>
+    <h2>Use this on your next decision.</h2>
+    <p class="lede">Work through the list with your team. Each step comes from the guide; the order matters.</p>
+    <ol class="checks">{{#each bundle.actionChecklist}}<li><span class="box"></span><span>{{this}}</span><span class="owner">Owner</span></li>{{/each}}</ol>
+    <div class="folio"><span>{{folioLabel}}</span><b>00</b></div>
   </section>
-  <section class="page cta">
-    <div class="eyebrow">A practical next step</div>
-    <h2>{{project.intake.callToAction}}</h2>
-    <p>Continue the conversation with {{project.intake.companyName}} and turn the ideas in this guide into a plan for your situation.</p>
-    <div class="cta-button">{{project.intake.website}}</div>
+
+  <section class="page back">
+    <div class="top"><span class="label">{{company}}</span><span class="label">{{domain}}</span></div>
+    <div class="back-main">
+      <div class="label">Next step</div>
+      <h2>{{project.intake.callToAction}}</h2>
+      <p>Continue the conversation with {{company}} and turn the ideas in this guide into a plan for your situation.</p>
+      <div class="button">{{domain}} {{{arrowSvg}}}</div>
+    </div>
+    <div class="back-wave">{{{backWave}}}</div>
   </section>
 </body>
 </html>

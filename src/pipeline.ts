@@ -5,7 +5,7 @@ import { ClientStore } from './client-store.js';
 import { inspectCampaign } from './quality.js';
 import { renderArtifacts } from './render.js';
 import { ProjectStore } from './store.js';
-import type { BrandProfile, Project, QualityReport } from './types.js';
+import type { BrandProfile, Project, ProjectArtifacts, QualityReport } from './types.js';
 
 const MAX_REPAIR_ATTEMPTS = 1;
 
@@ -92,9 +92,10 @@ export class ProductionPipeline {
       if (quality.blockers.length) throw new Error(`Quality gate failed: ${quality.blockers.join(', ')}`);
       project = await this.store.update(projectId, { quality });
 
-      await this.store.setStatus(projectId, 'rendering', 88, 'Rendering the premium guide and delivery package');
-      const artifacts = await renderArtifacts(project);
-      await this.store.update(projectId, { artifacts, status: 'client-review', progress: 100, error: undefined }, { type: 'status', message: 'Campaign ready for one consolidated review' });
+      await this.store.setStatus(projectId, 'rendering', 84, 'Rendering the guide, LinkedIn visuals, and clips');
+      const artifacts = await renderArtifacts(project, { onStage: (message) => this.store.update(projectId, {}, { type: 'status', message }) });
+      if (artifacts.notes?.length) await this.store.update(projectId, {}, { type: 'note', message: `Rendering notes: ${artifacts.notes.join(' ')}` });
+      await this.store.update(projectId, { artifacts, status: 'client-review', progress: 100, error: undefined }, { type: 'status', message: `Campaign ready for one consolidated review (${describeArtifacts(artifacts)})` });
     } catch (error) {
       await this.store.update(projectId, { status: 'failed', error: messageOf(error) }, { type: 'error', message: messageOf(error) });
     }
@@ -115,11 +116,21 @@ function fallbackBrand(project: Project): BrandProfile {
     primaryColor: project.intake.primaryColor,
     backgroundColor: '#ffffff',
     textColor: '#171717',
-    fontFamily: 'Arial, sans-serif',
+    // Empty so the guide uses the house type pairing rather than matching a generic Arial.
+    fontFamily: '',
     borderRadius: '4px',
     voiceSample: project.intake.toneNotes,
     sourceUrl: project.intake.website,
   };
+}
+
+function describeArtifacts(artifacts: ProjectArtifacts): string {
+  const parts = ['guide PDF', 'landing page'];
+  if (artifacts.carouselSlides?.length) parts.push(`${artifacts.carouselSlides.length}-slide carousel`);
+  if (artifacts.postCards?.length) parts.push(`${artifacts.postCards.length} post visuals`);
+  if (artifacts.motionClips?.length) parts.push(`${artifacts.motionClips.length} motion clip${artifacts.motionClips.length === 1 ? '' : 's'}`);
+  if (artifacts.speakerClips?.length) parts.push(`${artifacts.speakerClips.length} clip${artifacts.speakerClips.length === 1 ? '' : 's'} from the recording`);
+  return parts.join(', ');
 }
 
 function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error); }
