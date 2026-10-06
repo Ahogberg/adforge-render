@@ -16,6 +16,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+# ffmpeg renders the motion clips and cuts captioned clips from uploaded recordings.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/dist ./dist
 COPY templates ./templates
 COPY public ./public

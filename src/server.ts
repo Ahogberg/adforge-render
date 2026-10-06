@@ -17,7 +17,7 @@ import { ProductionPipeline } from './pipeline.js';
 import { ProspectEngine } from './prospect-engine.js';
 import { renderProspectPreview, renderUnsubscribePage } from './prospect-preview.js';
 import { ProspectStore, SuppressedContactError } from './prospect-store.js';
-import { CLIENT_REVISION_ROUNDS, renderReviewPage } from './review.js';
+import { CLIENT_REVISION_ROUNDS, renderReviewPage, reviewAssetFiles } from './review.js';
 import { ProjectStore } from './store.js';
 import { clientMemorySchema, intakeSchema, prospectInputSchema, prospectStatusSchema, type Project, type ProspectInput } from './types.js';
 
@@ -88,6 +88,14 @@ export async function createApp() {
     response.type('html').send(renderReviewPage(project));
   }));
 
+  app.get('/review/:token/assets/:name', asyncHandler(async (request, response) => {
+    const project = (await store.list()).find((item) => item.reviewToken === request.params.token);
+    const file = reviewAssetFiles(project?.artifacts).find((candidate) => path.basename(candidate) === request.params.name);
+    if (!file) return response.status(404).send('Not found');
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    response.setHeader('X-Robots-Tag', 'noindex');
+    response.sendFile(file);
+  }));
   app.post('/api/review/:token', intakeLimiter, asyncHandler(async (request, response) => {
     const project = (await store.list()).find((item) => item.reviewToken === request.params.token);
     if (!project) return response.status(404).send('Project not found');

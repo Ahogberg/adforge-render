@@ -4,6 +4,19 @@ Afterword turns one expert recording into a reviewed monthly B2B content bundle:
 
 It also includes the acquisition layer: import source-qualified prospects, score the fit, generate a private Campaign Preview and meeting-free outreach, approve the exact message, and track the prospect through reply, qualification, and $1,500 MRR conversion.
 
+## What the client receives
+
+Every campaign renders in the client's own design system: the palette is derived from the brand colour on their website (adjusted until it passes contrast checks) and the type pairing is matched to the fonts on their website from 25 bundled open-source families, embedded as static files.
+
+- **Premium guide (PDF):** cover, introduction with contents and page numbers, one page per section in one of four layouts (essay, framework, figure, comparison), a working checklist, and a back cover with the call to action. Overlong sections flow onto continuation pages.
+- **LinkedIn carousel:** a document-post PDF plus one PNG per slide (1080x1350).
+- **Post visuals:** one 1080x1350 card per LinkedIn post, built from its hook.
+- **Motion clips:** up to two 4:5 MP4 clips built only from verified material: a figure clip (counter, unit chart, payoff) and a quote clip.
+- **Clips from the recording:** when the client uploads the audio or video, up to two 15-55 second captioned clips cut around verified quotes, framed in the brand, loudness-normalised to -16 LUFS. Audio-only sources become audiograms. Captions use word-level timings from `OPENAI_CAPTION_MODEL` (default `whisper-1`), or estimated timings in demo mode.
+- Eight LinkedIn posts, three emails and landing-page copy in editable Markdown and HTML, the campaign JSON, and the source-reference map, all in one ZIP.
+
+Video needs `ffmpeg` and `ffprobe` on the server (installed in the Docker image; set `FFMPEG_PATH`/`FFPROBE_PATH` to override). Without them the campaign still renders and the dashboard notes that clips were skipped; rendering problems never block delivery of the guide.
+
 ## What is included
 
 - Public multipart intake endpoint for a transcript or source file
@@ -28,6 +41,8 @@ npm run setup:browsers
 cp .env.example .env
 npm run dev
 ```
+
+Install ffmpeg as well (`apt install ffmpeg` or `brew install ffmpeg`) to render video locally.
 
 Open `http://localhost:3001`. The default local operator key is `local-adforge-demo`. Click **Create demo project** to exercise the entire pipeline without external credentials.
 

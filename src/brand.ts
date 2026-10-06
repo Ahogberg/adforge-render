@@ -49,6 +49,7 @@ export async function scrapeBrand(website: string, fallbackColor: string): Promi
         backgroundColor,
         textColor: bodyStyle.color || '#171717',
         fontFamily: bodyStyle.fontFamily || 'Arial, sans-serif',
+        headingFontFamily: headingStyle?.fontFamily || '',
         borderRadius: buttonStyle?.borderRadius || '4px',
         voiceSample: document.body.innerText.replace(/\s+/g, ' ').trim().slice(0, 4_000),
         sourceUrl: window.location.href,

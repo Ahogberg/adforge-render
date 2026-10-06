@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { createApp } from '../src/server.js';
 import { ProjectStore } from '../src/store.js';
 import { ProspectStore } from '../src/prospect-store.js';
@@ -72,6 +75,29 @@ describe('client review', () => {
     expect(html).toContain('Landing headline copy');
     expect(html).not.toContain('Quality score');
     expect(html).toContain('Request one revision');
+  });
+
+  it('shows the designed guide, post visuals, carousel and clips, and serves only listed files', async () => {
+    const project = await projectInReview();
+    const dir = path.join(config.artifactDir, project.id);
+    await mkdir(path.join(dir, 'linkedin'), { recursive: true });
+    const file = (name: string) => path.join(dir, name);
+    await Promise.all(['premium-guide.pdf', 'linkedin/post-01.png', 'linkedin/carousel-slide-01.png', 'secret.json'].map((name) => writeFile(file(name), `fixture ${name}`)));
+    await projects.update(project.id, { artifacts: {
+      pdf: file('premium-guide.pdf'), landingPage: file('landing.html'), deliveryZip: file('delivery.zip'),
+      postCards: [file('linkedin/post-01.png')], carouselSlides: [file('linkedin/carousel-slide-01.png')],
+      motionClips: [{ file: file('quote-clip-01.mp4'), poster: file('quote-clip-01.poster.jpg'), title: 'A quote', kind: 'quote', durationSeconds: 9 }],
+    } });
+    const html = (await request(app).get(`/review/${project.reviewToken}`).expect(200)).text;
+    expect(html).toContain(`/review/${project.reviewToken}/assets/post-01.png`);
+    expect(html).toContain('Open the designed guide (PDF)');
+    expect(html).toContain('LinkedIn carousel');
+    expect(html).toContain('Quote clip');
+    const served = await request(app).get(`/review/${project.reviewToken}/assets/post-01.png`).expect(200);
+    expect(served.headers['cache-control']).toContain('private');
+    await request(app).get(`/review/${project.reviewToken}/assets/secret.json`).expect(404);
+    await request(app).get(`/review/${project.reviewToken}/assets/..%2Fsecret.json`).expect(404);
+    await request(app).get(`/review/wrong-token/assets/post-01.png`).expect(404);
   });
 
   it('enforces the single consolidated revision round', async () => {

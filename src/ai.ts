@@ -1,8 +1,11 @@
 import { createReadStream } from 'node:fs';
+import path from 'node:path';
 import OpenAI from 'openai';
 import { config } from './config.js';
+import { prepareAudioForTranscription } from './media.js';
 import { MAX_TRANSCRIPT_CHARS } from './quality.js';
 import {
+  SECTION_LAYOUTS,
   campaignBundleSchema,
   prospectPreviewSchema,
   prospectQualificationSchema,
@@ -18,14 +21,33 @@ import {
 
 const client = config.openaiKey ? new OpenAI({ apiKey: config.openaiKey }) : undefined;
 
+const textItem = (fields: string[]) => ({ type: 'object', additionalProperties: false, required: fields, properties: Object.fromEntries(fields.map((field) => [field, { type: 'string' }])) });
+const nullable = <T extends object>(schema: T) => ({ anyOf: [schema, { type: 'null' }] });
+
+const frameworkJsonSchema = {
+  type: 'object', additionalProperties: false, required: ['name', 'kind', 'items'],
+  properties: { name: { type: 'string' }, kind: { type: 'string', enum: ['sequence', 'pillars'] }, items: { type: 'array', minItems: 2, maxItems: 6, items: textItem(['label', 'detail']) } },
+};
+const statJsonSchema = textItem(['value', 'label', 'context', 'sourceTimestamp']);
+const comparisonJsonSchema = {
+  type: 'object', additionalProperties: false, required: ['leftLabel', 'rightLabel', 'rows'],
+  properties: { leftLabel: { type: 'string' }, rightLabel: { type: 'string' }, rows: { type: 'array', minItems: 2, maxItems: 6, items: textItem(['left', 'right']) } },
+};
+const carouselJsonSchema = {
+  type: 'object', additionalProperties: false, required: ['title', 'slides', 'closing'],
+  properties: { title: { type: 'string' }, slides: { type: 'array', minItems: 3, maxItems: 8, items: textItem(['heading', 'body']) }, closing: { type: 'string' } },
+};
+
 const bundleJsonSchema = {
   type: 'object', additionalProperties: false,
-  required: ['campaignAngle', 'title', 'subtitle', 'executiveSummary', 'sections', 'actionChecklist', 'linkedinPosts', 'emails', 'landingPage', 'sourceReferences'],
+  required: ['campaignAngle', 'title', 'subtitle', 'executiveSummary', 'sections', 'actionChecklist', 'linkedinPosts', 'emails', 'landingPage', 'sourceReferences', 'carousel'],
   properties: {
     campaignAngle: { type: 'string' }, title: { type: 'string' }, subtitle: { type: 'string' }, executiveSummary: { type: 'string' },
-    sections: { type: 'array', minItems: 4, maxItems: 10, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'body', 'pullQuote', 'sourceTimestamp'], properties: {
+    sections: { type: 'array', minItems: 4, maxItems: 10, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'body', 'pullQuote', 'sourceTimestamp', 'layout', 'framework', 'stat', 'comparison'], properties: {
       eyebrow: { type: 'string' }, title: { type: 'string' }, body: { type: 'array', items: { type: 'string' } },
       pullQuote: { type: ['string', 'null'] }, sourceTimestamp: { type: ['string', 'null'] },
+      layout: { type: 'string', enum: [...SECTION_LAYOUTS] },
+      framework: nullable(frameworkJsonSchema), stat: nullable(statJsonSchema), comparison: nullable(comparisonJsonSchema),
     } } },
     actionChecklist: { type: 'array', minItems: 4, maxItems: 8, items: { type: 'string' } },
     linkedinPosts: { type: 'array', minItems: 8, maxItems: 8, items: { type: 'object', additionalProperties: false, required: ['hook', 'body', 'cta'], properties: { hook: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' } } } },
@@ -34,6 +56,7 @@ const bundleJsonSchema = {
       eyebrow: { type: 'string' }, headline: { type: 'string' }, subheadline: { type: 'string' }, bullets: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } }, formHeading: { type: 'string' }, buttonLabel: { type: 'string' },
     } },
     sourceReferences: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false, required: ['claim', 'quote', 'speaker', 'timestamp'], properties: { claim: { type: 'string' }, quote: { type: 'string' }, speaker: { type: 'string' }, timestamp: { type: 'string' } } } },
+    carousel: carouselJsonSchema,
   },
 } as const;
 
@@ -56,8 +79,9 @@ const planJsonSchema = {
   required: ['thesis', 'campaignAngle', 'title', 'subtitle', 'sections', 'postAngles', 'emailPlan'],
   properties: {
     thesis: { type: 'string' }, campaignAngle: { type: 'string' }, title: { type: 'string' }, subtitle: { type: 'string' },
-    sections: { type: 'array', minItems: 4, maxItems: 7, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'point', 'ideaNumbers'], properties: {
+    sections: { type: 'array', minItems: 4, maxItems: 7, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'point', 'ideaNumbers', 'layout'], properties: {
       eyebrow: { type: 'string' }, title: { type: 'string' }, point: { type: 'string' }, ideaNumbers: { type: 'array', items: { type: 'integer' } },
+      layout: { type: 'string', enum: [...SECTION_LAYOUTS] },
     } } },
     postAngles: { type: 'array', minItems: 8, maxItems: 8, items: { type: 'object', additionalProperties: false, required: ['angle', 'ideaNumber'], properties: { angle: { type: 'string' }, ideaNumber: { type: 'integer' } } } },
     emailPlan: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'object', additionalProperties: false, required: ['job', 'focus'], properties: { job: { type: 'string', enum: ['deliver', 'develop', 'invite'] }, focus: { type: 'string' } } } },
@@ -77,11 +101,12 @@ const guideJsonSchema = {
 
 const derivativesJsonSchema = {
   type: 'object', additionalProperties: false,
-  required: ['linkedinPosts', 'emails', 'landingPage'],
+  required: ['linkedinPosts', 'emails', 'landingPage', 'carousel'],
   properties: {
     linkedinPosts: bundleJsonSchema.properties.linkedinPosts,
     emails: bundleJsonSchema.properties.emails,
     landingPage: bundleJsonSchema.properties.landingPage,
+    carousel: carouselJsonSchema,
   },
 } as const;
 
@@ -129,8 +154,10 @@ export function isLiveAi(): boolean { return Boolean(client); }
 
 export async function transcribeFile(filePath: string): Promise<string> {
   if (!client) return demoTranscript;
+  // Large uploads (any video, long audio) are reduced to a small speech MP3 first: the API caps files at 25 MB.
+  const speech = await prepareAudioForTranscription(filePath, path.join(config.uploadDir, '.work'));
   const response = await client.audio.transcriptions.create({
-    file: createReadStream(filePath),
+    file: createReadStream(speech),
     model: config.transcriptionModel,
     response_format: 'diarized_json',
     chunking_strategy: 'auto',
@@ -144,6 +171,23 @@ export async function transcribeFile(filePath: string): Promise<string> {
   return 'text' in response ? String(response.text) : JSON.stringify(response);
 }
 
+export interface TimedWord { word: string; start: number; end: number }
+
+/** Word-level timings for captions; undefined when no transcription model is configured. */
+export async function transcribeWords(filePath: string): Promise<TimedWord[] | undefined> {
+  if (!client) return undefined;
+  const response = await client.audio.transcriptions.create({
+    file: createReadStream(filePath),
+    model: config.captionModel,
+    response_format: 'verbose_json',
+    timestamp_granularities: ['word'],
+  });
+  const words = (response as { words?: Array<{ word?: string; start?: number; end?: number }> }).words ?? [];
+  return words
+    .filter((word) => word.word?.trim())
+    .map((word) => ({ word: (word.word as string).trim(), start: Number(word.start ?? 0), end: Number(word.end ?? word.start ?? 0) }));
+}
+
 export interface CampaignContext {
   intake: Intake;
   brand: BrandProfile;
@@ -154,7 +198,14 @@ export interface CampaignContext {
   onStage?: (message: string) => Promise<unknown>;
 }
 
-const SOURCE_RULES = `Never invent statistics, customers, quotes, results, or opinions. Quotes must be copied verbatim from the transcript, with the transcript timestamp; they are verified automatically and the delivery is blocked if a quote cannot be found.`;
+const SOURCE_RULES = `Never invent statistics, customers, quotes, results, or opinions. Quotes must be copied verbatim from the transcript, with the transcript timestamp; they are verified automatically and the delivery is blocked if a quote cannot be found. Figures must be exactly as the speaker said them; never calculate, round, or combine numbers.`;
+
+const LAYOUT_RULES = `Each section is one printed A4 page with a layout:
+- essay: two to four paragraphs, at most 280 words of body copy.
+- framework: when the speaker describes a sequence of steps (kind "sequence") or a set of named parts (kind "pillars"). Three to five items; label at most five words, detail at most 24 words. One or two paragraphs of body copy, at most 160 words.
+- stat: only when the speaker states a specific figure. value is the figure exactly as said (for example "31 of 40" or "40%"), label at most twelve words saying what was counted, context at most eighteen words, sourceTimestamp where it was said. Figures are verified against the transcript near that timestamp and the delivery is blocked if one cannot be found. One or two paragraphs, at most 170 words.
+- comparison: when the argument contrasts two approaches. leftLabel names the common approach and rightLabel the better one; three to five rows, each cell at most fourteen words. One or two paragraphs, at most 160 words.
+Use the planned layout unless the source does not support it. When the source allows, use at least two layouts besides essay, and never place two identical non-essay layouts next to each other. Set every unused feature field to null.`;
 const STYLE_RULES = `Use clear international English. Write like a senior practitioner, not a marketer. No AI clichés (for example "in today's fast-paced world", "game-changer", "unlock", "delve", "navigate the complexities", "let's dive in", "it's not just X, it's Y"). No inflated claims, no exclamation marks, no emoji, no hashtags inside sentences.`;
 
 /**
@@ -173,18 +224,18 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
 
   await stage('Choosing one thesis and planning the campaign');
   const plan = await structured<{ campaignAngle: string; title: string; subtitle: string }>('adforge_campaign_plan', planJsonSchema,
-    `You are the senior B2B editor inside Afterword. Choose ONE central thesis that is useful to the audience and naturally supports the client's offer without becoming a brochure. Plan a guide of 4 to 7 sections that builds one argument, eight LinkedIn angles that each carry a different idea, and three emails with the jobs deliver, develop, invite. Do not repeat angles or hooks from past campaigns. Honour every client rule and correction.`,
+    `You are the senior B2B editor inside Afterword. Choose ONE central thesis that is useful to the audience and naturally supports the client's offer without becoming a brochure. Plan a guide of 4 to 7 sections that builds one argument, eight LinkedIn angles that each carry a different idea, and three emails with the jobs deliver, develop, invite. Give each section a layout (essay, framework, stat, comparison) that fits what the source actually contains: framework only when the speaker gives steps or named parts, stat only when the speaker states a figure, comparison only when the argument contrasts two approaches. Do not repeat angles or hooks from past campaigns. Honour every client rule and correction.`,
     `${brief}\n\nEXTRACTED IDEAS\n${JSON.stringify(ideas)}`);
 
   await stage('Writing the premium guide');
   const guide = await structured<Record<string, unknown>>('adforge_campaign_guide', guideJsonSchema,
-    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES} Each section must fit one printed A4 page: two to four paragraphs and no more than 280 words of body copy in total. Pull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
+    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES}\n${LAYOUT_RULES}\nPull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
     `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nEXTRACTED IDEAS AND QUOTES\n${JSON.stringify(ideas)}`);
 
   await stage('Writing LinkedIn posts, emails, and landing copy');
   const expert = context.client?.expertName || context.intake.expertName || 'the expert speaker';
   const derived = await structured<Record<string, unknown>>('adforge_campaign_derivatives', derivativesJsonSchema,
-    `You write distribution copy for Afterword. LinkedIn posts and emails are written in the first person as ${expert}, matching the voice reference closely (sentence length, directness, vocabulary, formatting). Each LinkedIn post carries its planned angle, stands alone without the guide, is 120 to 220 words, opens with a specific first line rather than a generic claim, and uses short paragraphs. Emails have one job each (deliver the guide, develop its sharpest idea, invite the next step) and are under 180 words. Landing copy is labelled blocks for a guide download page. ${SOURCE_RULES} ${STYLE_RULES}`,
+    `You write distribution copy for Afterword. LinkedIn posts and emails are written in the first person as ${expert}, matching the voice reference closely (sentence length, directness, vocabulary, formatting). Each LinkedIn post carries its planned angle, stands alone without the guide, is 120 to 220 words, opens with a specific first line rather than a generic claim, and uses short paragraphs. Emails have one job each (deliver the guide, develop its sharpest idea, invite the next step) and are under 180 words. Landing copy is labelled blocks for a guide download page. The carousel is a LinkedIn document post that teaches the guide's argument on its own: title at most nine words; five to seven slides in the order of the guide, one idea each, heading at most eight words and body at most thirty words; closing at most fourteen words, inviting the reader to get the full guide. No quotation marks and no figures in the carousel unless they appear in the guide. ${SOURCE_RULES} ${STYLE_RULES}`,
     `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nFINISHED GUIDE\n${JSON.stringify(guide)}`);
 
   const draft = normalizeBundle({ campaignAngle: plan.campaignAngle, title: plan.title, subtitle: plan.subtitle, ...guide, ...derived });
@@ -193,7 +244,7 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
   return editBundle(context, draft, [
     'Tighten every asset. Remove repetition across the eight posts, clichés, filler, and anything that sounds generated.',
     'Enforce every terminology rule and never use a banned phrase.',
-    'Keep verbatim quotes exactly as written. Keep the structure and number of items.',
+    'Keep verbatim quotes and figures exactly as written. Keep the structure, the section layouts and feature blocks, and the number of items; tighten wording within the same limits.',
   ]);
 }
 
@@ -205,6 +256,7 @@ export async function repairCampaign(context: CampaignContext, bundle: CampaignB
     'The draft failed automated checks. Fix exactly these problems and change nothing else:',
     ...failures.map((failure) => `- ${failure}`),
     'For a quote that could not be found, replace it with a verbatim sentence from the transcript or remove it.',
+    'For a figure that could not be found, use the figure exactly as said in the transcript, or change that section to the essay layout and set stat to null.',
   ], true);
 }
 
@@ -218,7 +270,7 @@ export async function distilRevision(note: string, memory: ClientMemory): Promis
 
 async function editBundle(context: CampaignContext, bundle: CampaignBundle, tasks: string[], includeTranscript = false): Promise<CampaignBundle> {
   const edited = await structured<unknown>('adforge_campaign_bundle', bundleJsonSchema,
-    `You are the final editor inside Afterword. Return the complete campaign in the same structure. ${SOURCE_RULES} ${STYLE_RULES}`,
+    `You are the final editor inside Afterword. Return the complete campaign in the same structure. ${SOURCE_RULES}\n${LAYOUT_RULES}\n${STYLE_RULES}`,
     `${clientBrief(context)}\n\nEDITOR TASKS\n${tasks.join('\n')}\n\nCAMPAIGN\n${JSON.stringify(bundle)}${includeTranscript ? `\n\nSOURCE TRANSCRIPT\n${context.transcript.slice(0, MAX_TRANSCRIPT_CHARS)}` : ''}`);
   return normalizeBundle(edited);
 }
@@ -300,41 +352,127 @@ function formatTime(seconds: number): string {
 }
 
 function createDemoBundle(intake: Intake, transcript: string, revisionNote: string): CampaignBundle {
-  const topic = intake.offer.split(/[.!?]/)[0] || 'expert services';
-  const sectionSeeds: Array<[string, string]> = [
-    ['The hidden constraint', `Most teams assume the problem is a lack of information. The source makes a stronger case: the real constraint is turning expertise into a decision people can act on.`],
-    ['Make the problem observable', `The fastest progress starts by naming the current friction in practical terms. For ${intake.audience}, clarity is more useful than another broad framework.`],
-    ['Build a repeatable decision', `A useful method reduces uncertainty without pretending every situation is identical. It gives the reader a sequence, a standard, and a clear next action.`],
-    ['From insight to implementation', `The final step is operational. Owners, timing, and review criteria turn the idea into something a team can use rather than merely agree with.`],
-    ['What to do next', `${intake.companyName} helps teams apply this thinking to ${topic.toLowerCase()}. The next conversation should begin with the situation the buyer is trying to change.`],
+  // The demo transcript backs every quote and figure below, so demo campaigns pass the same source checks.
+  const usesDemoSource = transcript.trim() === demoTranscript.trim() || !transcript.trim();
+  // With a real transcript but no AI key, only the opening section borrows a verbatim line from it.
+  const quote = (text: string, opening = false) => (usesDemoSource ? text : opening ? demoPullQuote(transcript) : undefined);
+  const company = intake.companyName;
+  const sections: CampaignBundle['sections'] = [
+    {
+      eyebrow: 'The problem', title: 'Expertise that never leaves the room',
+      body: [
+        'Most expert-led firms are not short of ideas. Every month their senior people explain, debate, and refine a point of view in client meetings, webinars, and workshops. Very little of it reaches the buyers who were not in the room.',
+        'The reason is rarely effort. Turning an hour of talk into something a buyer can use takes a different skill from giving the talk, and nobody owns that job. So the recording goes into a folder and the insight goes nowhere.',
+        `This guide treats that recording as evidence. It shows how ${company} turns one argument into a decision the reader can make, and why that is worth more than another round of content.`,
+      ],
+      pullQuote: quote('Most teams already have more expertise than they publish.', true), sourceTimestamp: usesDemoSource ? '00:00' : undefined, layout: 'essay',
+    },
+    {
+      eyebrow: 'The evidence', title: 'The recording is not the asset',
+      body: [
+        'A webinar has an audience of forty for one hour. After that it is a file. The work that turns it into an asset, choosing the argument and making it usable, almost never happens.',
+        'The useful shift is to stop treating a recording as finished content and start treating it as source material: something to quote, test, and build on.',
+      ],
+      layout: usesDemoSource ? 'stat' : 'essay',
+      stat: usesDemoSource ? { value: '31 of 40', label: 'client webinars were never used again after the live session', context: 'A review of one year of client webinars', sourceTimestamp: '04:05' } : undefined,
+      pullQuote: quote('treat a recording as source evidence rather than finished content'), sourceTimestamp: usesDemoSource ? '02:18' : undefined,
+    },
+    {
+      eyebrow: 'The method', title: 'Three moves that make an idea repeatable',
+      body: [
+        'The teams that turn expertise into pipeline do not publish more. They make one idea easy to repeat, in the same words, by everyone who talks to a buyer.',
+        'Each move is small on its own. Together they turn an opinion into a decision the reader can make without you in the room.',
+      ],
+      layout: 'framework',
+      framework: { name: 'The decision sequence', kind: 'sequence', items: [
+        { label: 'Name the decision', detail: 'State the one choice the reader should make differently after reading, in a single sentence.' },
+        { label: 'Show the evidence', detail: 'Support it with what the expert has seen first-hand, quoted and traceable to the moment it was said.' },
+        { label: 'Make the next step small', detail: 'End with an action the reader can take this week without asking anyone for budget.' },
+      ] },
+      sourceTimestamp: usesDemoSource ? '09:10' : undefined,
+    },
+    {
+      eyebrow: 'The difference', title: 'A summary reports. An argument decides.',
+      body: [
+        'Most repurposed content is a summary: it reports what was said, in the order it was said. Buyers skim it and move on, because it asks nothing of them.',
+        'An argument commits to one point and tells the reader what to do about it. It is shorter, sharper, and far easier to share inside a buying committee.',
+      ],
+      layout: 'comparison',
+      comparison: { leftLabel: 'A summary', rightLabel: 'An argument', rows: [
+        { left: 'Reports what was said', right: 'Says what to do differently on Monday' },
+        { left: 'Covers every topic in the recording', right: 'Commits to one decision and defends it' },
+        { left: 'Ends when the recording ends', right: 'Ends with a next step the reader can take' },
+        { left: 'Interchangeable with any firm', right: 'Recognisably yours, in your words' },
+      ] },
+      pullQuote: quote('An argument tells them what to do differently on Monday.'), sourceTimestamp: usesDemoSource ? '12:30' : undefined,
+    },
+    {
+      eyebrow: 'Before you publish', title: 'Three tests buyers apply without telling you',
+      body: [
+        'The buyers we interviewed did not ask for more content. They wanted to know what to decide and why to trust the person telling them.',
+        `${company} applies these three tests to every piece before it leaves the building. Use them on your next recording before you publish anything.`,
+      ],
+      layout: 'framework',
+      framework: { name: 'The publishing test', kind: 'pillars', items: [
+        { label: 'One sentence', detail: 'Can your account team repeat the idea in one sentence without notes?' },
+        { label: 'One piece of evidence', detail: 'Is there a moment from real work that proves it, quoted as it was said?' },
+        { label: 'One next step', detail: 'Does the reader know exactly what to do this week?' },
+      ] },
+      pullQuote: quote('They wanted one clear way to decide.'), sourceTimestamp: usesDemoSource ? '15:02' : undefined,
+    },
   ];
-  const sections = sectionSeeds.map(([title, body], index) => ({
-    eyebrow: `Principle ${String(index + 1).padStart(2, '0')}`,
-    title,
-    body: [body, `This section is generated in demo mode from the project brief. Connect an OpenAI API key to ground the final editorial version in the full source transcript.`],
-    pullQuote: index === 0 ? demoPullQuote(transcript) : undefined,
-    sourceTimestamp: transcript ? `[demo ${index + 1}:00]` : undefined,
-  }));
   const hooks = [
-    'Most B2B content starts too late.', 'Your webinar is not the asset.', 'A useful framework should change a decision.',
-    'More information is rarely the answer.', 'The best expert content leaves fingerprints.', 'Consistency is an operational advantage.',
-    'A transcript is evidence—not an article.', 'The final 10% is what earns trust.',
+    'Most expert firms are not short of ideas.', '31 of 40 webinars were never used again.', 'A recording is evidence, not content.',
+    'Three moves make an idea repeatable.', 'A summary reports. An argument decides.', 'Buyers do not want more content.',
+    'If your team cannot repeat it, it does not exist.', 'The final step is the one nobody owns.',
   ];
   return {
-    campaignAngle: revisionNote ? `Revised around: ${revisionNote}` : `Turn expertise into a repeatable decision for ${intake.audience}`,
-    title: `The Practical Guide to ${topic}`,
-    subtitle: `A clear framework for ${intake.audience} who need to move from insight to action`,
-    executiveSummary: `This guide distils one expert source into a practical argument for ${intake.audience}. It frames the core constraint, introduces a repeatable way forward, and connects the insight to ${intake.companyName}'s offer without turning the guide into a sales brochure.`,
+    campaignAngle: revisionNote ? `Revised around: ${revisionNote}` : 'Turn one expert insight into a decision buyers can make without you in the room',
+    title: 'The Repeatable Decision',
+    subtitle: `How ${intake.audience.charAt(0).toLowerCase()}${intake.audience.slice(1)} turn one expert insight into a decision their buyers can act on`,
+    executiveSummary: `Expert-led firms produce more insight than they ever publish. This guide shows why the recording is not the asset, the three moves that make an idea repeatable, and the tests buyers apply before they trust it. It ends with a checklist you can use on your next recording.`,
     sections,
-    actionChecklist: ['Name the decision this content should change', 'Choose one primary audience', 'Trace important claims to the source', 'Remove duplicated explanations', 'End with one proportionate next step'],
-    linkedinPosts: hooks.map((hook, index) => ({ hook, body: `${sections[index % sections.length]?.body[0]}\n\nThe point is not to publish more. It is to make one valuable idea easier to understand and use.`, cta: index > 5 ? intake.callToAction : 'What does this look like inside your team?' })),
-    emails: [0, 1, 2].map((index) => ({ subject: [`Your guide is ready`, `The idea worth revisiting`, `A practical next step`][index] ?? 'A useful follow-up', preview: `A concise note from ${intake.companyName}.`, body: `${sections[index]?.body[0]}\n\nThe guide develops the full argument with a practical checklist.`, cta: intake.callToAction })),
-    landingPage: { eyebrow: `A practical guide from ${intake.companyName}`, headline: `Make ${topic.toLowerCase()} easier to act on`, subheadline: `A focused guide for ${intake.audience}, built from real expert insight.`, bullets: ['A clearer view of the core constraint', 'A practical framework for action', 'A checklist you can use with your team'], formHeading: 'Get the guide', buttonLabel: 'Send me the guide' },
-    sourceReferences: transcript ? [{ claim: 'Primary campaign thesis', quote: demoPullQuote(transcript) ?? transcript.slice(0, 180), speaker: 'Source speaker', timestamp: '00:00' }] : [],
+    actionChecklist: ['Name the one decision your next recording should change', 'Find the moment in the recording that proves it', 'Write the idea as one sentence your team can repeat', 'Cut every section that does not support that decision', 'End with one next step a reader can take this week'],
+    linkedinPosts: hooks.map((hook, index) => ({
+      hook,
+      body: `${sections[index % sections.length]?.body[0] ?? ''}\n\nThe point is not to publish more. It is to make one valuable idea easier to understand and use.`,
+      cta: index > 5 ? intake.callToAction : 'What does this look like inside your team?',
+    })),
+    emails: [0, 1, 2].map((index) => ({ subject: ['Your guide is ready', 'The recording is not the asset', 'A practical next step'][index] ?? 'A useful follow-up', preview: `A short note from ${company}.`, body: `${sections[index]?.body[0] ?? ''}\n\nThe guide develops the full argument with a practical checklist.`, cta: intake.callToAction })),
+    landingPage: { eyebrow: `A field guide from ${company}`, headline: 'Turn one expert insight into a decision buyers can make', subheadline: `A short guide for ${intake.audience}, built from real expert experience.`, bullets: ['Why most recordings are never used again', 'Three moves that make an idea repeatable', 'A checklist for your next recording'], formHeading: 'Get the guide', buttonLabel: 'Send me the guide' },
+    sourceReferences: usesDemoSource
+      ? [
+        { claim: 'Expertise stays unpublished', quote: 'Most teams already have more expertise than they publish.', speaker: 'Speaker A', timestamp: '00:00' },
+        { claim: 'Recordings are rarely reused', quote: '31 of them were never used again after the live session.', speaker: 'Speaker A', timestamp: '04:05' },
+        { claim: 'An argument beats a summary', quote: 'An argument tells them what to do differently on Monday.', speaker: 'Speaker A', timestamp: '12:30' },
+        { claim: 'Repeatability is the test', quote: 'If your account team cannot repeat the idea in one sentence, it does not exist outside the room.', speaker: 'Speaker A', timestamp: '18:40' },
+      ]
+      : transcript ? [{ claim: 'Primary campaign thesis', quote: demoPullQuote(transcript) ?? transcript.slice(0, 180), speaker: 'Source speaker', timestamp: '00:00' }] : [],
+    carousel: {
+      title: 'Your webinar is not the asset',
+      slides: [
+        { heading: 'The recording goes into a folder', body: 'Most expert firms give a genuinely good hour of talk to forty people, then never use it again.' },
+        { heading: 'Treat it as evidence', body: 'A recording is source material to quote, test, and build on. It is not finished content.' },
+        { heading: 'Name the decision', body: 'State the one choice your reader should make differently, in a single sentence.' },
+        { heading: 'Show the evidence', body: 'Support it with what the expert has seen first-hand, traceable to the moment it was said.' },
+        { heading: 'Make the next step small', body: 'End with an action the reader can take this week without asking for budget.' },
+        { heading: 'Summaries report. Arguments decide.', body: 'Commit to one point and tell the reader what to do about it.' },
+      ],
+      closing: 'The full field guide has the checklist for your next recording.',
+    },
   };
 }
 
-const demoTranscript = `[00:00] Speaker A: Most teams already have more expertise than they publish. The problem is that the knowledge is trapped inside meetings, webinars, and individual conversations.\n[02:18] Speaker B: The useful shift is to treat a recording as source evidence rather than finished content.\n[06:42] Speaker A: Once the central decision is clear, every format can support the same argument without repeating the same words.`;
+const demoTranscript = [
+  '[00:00] Speaker A: Most teams already have more expertise than they publish. The problem is that the knowledge is trapped inside meetings, webinars, and individual conversations.',
+  '[02:18] Speaker B: The useful shift is to treat a recording as source evidence rather than finished content.',
+  '[04:05] Speaker A: We went back through 40 client webinars from last year. 31 of them were never used again after the live session.',
+  '[06:42] Speaker A: Once the central decision is clear, every format can support the same argument without repeating the same words.',
+  '[09:10] Speaker B: The teams that get this right do three things. They name the decision, they show the evidence, and they make the next step small.',
+  '[12:30] Speaker A: A summary tells people what was said. An argument tells them what to do differently on Monday.',
+  '[15:02] Speaker B: The buyers we interviewed did not want more content. They wanted one clear way to decide.',
+  '[18:40] Speaker A: If your account team cannot repeat the idea in one sentence, it does not exist outside the room.',
+].join('\n');
 
 function createDemoProspectPreview(
   input: ProspectInput,
