@@ -21,7 +21,7 @@ async function load() {
     if (!state.selected || !list.some((item) => item.id === state.selected)) state.selected = list[0]?.id || null;
     render();
   } catch (error) {
-    if (String(error.message).includes('authentication')) requestKey();
+    if (String(error.message).includes('authentication')) requestKey(state.key ? 'That key was not accepted. Check ADFORGE_OPERATOR_KEY in Railway.' : '');
     else $('#record-list').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   }
 }
@@ -168,7 +168,20 @@ function bindProjectActions() {
 
 async function act(path) { await api(path, { method: 'POST' }); await load(); }
 function setView(view) { state.view = view; state.selected = currentList()[0]?.id || null; render(); }
-function requestKey() { const key = prompt('Enter your AdForge operator key'); if (key) { state.key = key; sessionStorage.setItem('adforge-key', key); void load(); } }
+// An inline form rather than prompt(): mobile browsers often suppress dialogs that open on page load.
+function requestKey(message = '') {
+  $('#record-list').innerHTML = '<div class="empty">Sign in to see prospects and projects.</div>';
+  $('#detail-panel').innerHTML = `<form class="key-form" id="key-form"><span class="forge-icon">A</span><h2>Operator access</h2><p>Paste the operator key (Railway → adforge-render → Variables → ADFORGE_OPERATOR_KEY).</p><input type="password" name="key" autocomplete="current-password" placeholder="Operator key" required><button type="submit">Sign in</button>${message ? `<p class="key-error">${escapeHtml(message)}</p>` : ''}</form>`;
+  $('#key-form').onsubmit = (event) => {
+    event.preventDefault();
+    const key = new FormData(event.target).get('key').trim();
+    if (!key) return;
+    state.key = key;
+    sessionStorage.setItem('adforge-key', key);
+    void load();
+  };
+  $('#key-form input').focus();
+}
 function escapeHtml(value) { const div = document.createElement('div'); div.textContent = String(value ?? ''); return div.innerHTML; }
 
 async function showManualSend(id, email) {
@@ -210,7 +223,7 @@ $('#memory-form').onsubmit = async (event) => {
   try { await api(`/api/clients/${form.dataset.clientId}/memory`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(memory) }); $('#memory-dialog').close(); await load(); }
   catch (error) { alert(error.message); }
 };
-$('#set-key').onclick = requestKey;
+$('#set-key').onclick = () => requestKey();
 $('#refresh').onclick = load;
 $('#create-demo').onclick = async () => { await api('/api/projects/demo/create', { method: 'POST' }); await load(); };
 $('#demo-prospect').onclick = async () => { const item = await api('/api/prospects/demo/create', { method: 'POST' }); state.selected = item.id; await load(); };

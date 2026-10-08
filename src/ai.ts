@@ -463,6 +463,9 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
   };
 }
 
+/** The built-in demo source; demo projects use it whether or not an OpenAI key is configured. */
+export function demoSourceTranscript(): string { return demoTranscript; }
+
 const demoTranscript = [
   '[00:00] Speaker A: Most teams already have more expertise than they publish. The problem is that the knowledge is trapped inside meetings, webinars, and individual conversations.',
   '[02:18] Speaker B: The useful shift is to treat a recording as source evidence rather than finished content.',
