@@ -21,7 +21,13 @@ async function load() {
     if (!state.selected || !list.some((item) => item.id === state.selected)) state.selected = list[0]?.id || null;
     render();
   } catch (error) {
-    if (String(error.message).includes('authentication')) requestKey(state.key ? 'That key was not accepted. Check ADFORGE_OPERATOR_KEY in Railway.' : '');
+    if (String(error.message).includes('authentication')) {
+      // A rejected key is forgotten so the next attempt starts clean.
+      const rejected = Boolean(state.key);
+      state.key = '';
+      sessionStorage.removeItem('adforge-key');
+      requestKey(rejected ? 'That key was not accepted. Copy it again from ADFORGE_OPERATOR_KEY in Railway.' : '');
+    }
     else $('#record-list').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   }
 }
@@ -241,4 +247,5 @@ async function submitForm(event, path, dialogSelector, idleLabel) {
 }
 
 void load();
-setInterval(load, 5000);
+// Do not poll while the sign-in form is open: each refresh would clear the field being typed in.
+setInterval(() => { if (!document.querySelector('#key-form')) void load(); }, 5000);
