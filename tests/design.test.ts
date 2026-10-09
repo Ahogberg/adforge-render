@@ -62,5 +62,6 @@ describe('motif and copy helpers', () => {
   it('marks quote fragments with an ellipsis instead of changing the speaker’s words', () => {
     expect(displayQuote('treat a recording as source evidence')).toBe('…treat a recording as source evidence…');
     expect(displayQuote('“They wanted one clear way to decide.”')).toBe('They wanted one clear way to decide.');
+    expect(displayQuote('"We\'ve always paid the old rate." Which isn\'t really an objection, it\'s a test.')).toBe('‘We\'ve always paid the old rate.’ Which isn\'t really an objection, it\'s a test.');
   });
 });

@@ -394,7 +394,11 @@ export function displayDomain(url: string): string {
 
 /** Marks a quote that starts or ends mid-sentence with an ellipsis instead of altering the speaker's words. */
 export function displayQuote(quote: string): string {
-  let text = quote.trim().replace(/^["“”']+|["“”']+$/g, '');
+  let text = quote.trim();
+  // Strip outer marks only when they wrap the whole quote; a leading mark may open quoted speech inside it.
+  if (/^["“]/.test(text) && /["”]$/.test(text)) text = text.replace(/^["“]+|["”]+$/g, '');
+  // Speech quoted inside the quote becomes single curly quotes, so the outer marks stay balanced.
+  text = text.replace(/"([^"]+)"/g, '‘$1’').replace(/"/g, '');
   if (/^[a-z]/.test(text)) text = `…${text}`;
   if (!/[.!?…]$/.test(text)) text = `${text}…`;
   return text;
