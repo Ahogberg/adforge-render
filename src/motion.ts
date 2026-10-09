@@ -27,6 +27,8 @@ export function planMotionClips(bundle: CampaignBundle): MotionSpec[] {
     .filter((section) => section !== statSection && section.pullQuote)
     .map((section) => ({ quote: section.pullQuote as string, timestamp: section.sourceTimestamp }))
     .filter(({ quote }) => { const words = quote.trim().split(/\s+/).length; return words >= 5 && words <= 28; })
+    // A reply to an unseen question ("Neither. It's…") makes no sense as a standalone clip.
+    .filter(({ quote }) => !STANDALONE_FAILS.test(quote.trim().replace(/^["“”']+/, '')))
     // Complete sentences make better clips than fragments; shorter quotes read better in motion.
     .sort((a, b) => Number(/^[a-z]/.test(a.quote)) - Number(/^[a-z]/.test(b.quote)) || a.quote.length - b.quote.length);
   for (const quote of quotes) {
@@ -35,6 +37,8 @@ export function planMotionClips(bundle: CampaignBundle): MotionSpec[] {
   }
   return specs.slice(0, MAX_CLIPS);
 }
+
+const STANDALONE_FAILS = /^(neither|yes|no|nope|exactly|right|well|absolutely|sure)\b/i;
 
 export async function renderMotionClips(browser: Browser, project: Project, design: DesignSystem, directory: string): Promise<{ clips: VideoArtifact[]; notes: string[] }> {
   if (!project.bundle) return { clips: [], notes: [] };
@@ -134,7 +138,7 @@ function scriptJson(value: unknown): string {
 }
 
 function statBody(spec: Extract<MotionSpec, { kind: 'stat' }>, words: (text: string) => string): string {
-  const ratio = spec.value.match(/^\s*(\d+)\s+(?:of|out of|in)\s+(\d+)\b/i);
+  const ratio = spec.value.match(/^\s*(\d+)\s+(?:of|out of|in)\s+(?:(?:the|those|these|our|all)\s+)?(\d+)\b/i);
   const unitized = ratio && Number(ratio[2]) <= 60 && Number(ratio[1]) <= Number(ratio[2]);
   const viz = unitized
     ? `<div class="abs grid" id="grid" data-of="${ratio[1]}" data-total="${ratio[2]}"></div>

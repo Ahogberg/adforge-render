@@ -44,6 +44,12 @@ describe('motion clip planning', () => {
     expect(['Most teams already have more expertise than they publish.', 'An argument tells them what to do differently on Monday.']).toContain(specs[1]?.kind === 'quote' ? specs[1].quote : '');
   });
 
+  it('never turns a reply to an unseen question into a quote clip', () => {
+    const replies = bundle();
+    replies.sections = replies.sections.map((section) => (section.pullQuote && /^[A-Z]/.test(section.pullQuote) && section.pullQuote !== 'Too short.' ? { ...section, pullQuote: `Neither. ${section.pullQuote}` } : section));
+    expect(planMotionClips(replies).filter((spec) => spec.kind === 'quote')).toEqual([]);
+  });
+
   it('plans no clips when there is no figure and no usable quote', () => {
     const empty = bundle();
     empty.sections = empty.sections.map((section) => ({ ...section, layout: undefined, stat: undefined, pullQuote: undefined }));

@@ -229,7 +229,7 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
 
   await stage('Writing the premium guide');
   const guide = await structured<Record<string, unknown>>('adforge_campaign_guide', guideJsonSchema,
-    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES}\n${LAYOUT_RULES}\nPull quotes must come from the extracted quotes. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
+    `You are the senior B2B editor inside Afterword writing the guide on behalf of the client company. Follow the plan exactly: one section per planned section, in order. ${SOURCE_RULES}\n${LAYOUT_RULES}\nPull quotes must come from the extracted quotes and must make sense on their own: never choose a line that answers an unseen question (starting with Neither, Yes, No, Exactly, Right or Well) or that leans on a pronoun with no referent. The guide must feel edited, not summarized: argue, give examples from the source, and make each section end on a usable point. ${STYLE_RULES}`,
     `${brief}\n\nPLAN\n${JSON.stringify(plan)}\n\nEXTRACTED IDEAS AND QUOTES\n${JSON.stringify(ideas)}`);
 
   await stage('Writing LinkedIn posts, emails, and landing copy');
