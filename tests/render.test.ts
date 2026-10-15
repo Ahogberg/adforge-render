@@ -51,6 +51,9 @@ describe('guide rendering', () => {
     expect(pdf).toContain('/CIDFontType2');
     expect(pdf).not.toContain('/Subtype /Type3');
     expect(artifacts.designSummary).toContain('Libre Caslon Text + Figtree');
+    // Every guide page is also a JPEG for the view-only review page; they never go in the delivery ZIP.
+    expect(artifacts.guidePages?.length).toBeGreaterThanOrEqual(8);
+    expect((await stat(artifacts.guidePages?.[0] as string)).size).toBeGreaterThan(20_000);
     expect(artifacts.carouselSlides).toHaveLength((bundle.carousel?.slides.length ?? 0) + 2);
     expect(artifacts.postCards).toHaveLength(8);
     for (const file of [...(artifacts.carouselSlides ?? []), ...(artifacts.postCards ?? [])]) {
@@ -103,5 +106,6 @@ describe('video rendering', () => {
     const zip = await readFile(artifacts.deliveryZip, 'latin1');
     expect(zip).toContain('motion/figure-clip-01.mp4');
     expect(zip).not.toContain('.poster.jpg');
+    expect(zip).not.toContain('review-pages/');
   }, 240_000);
 });

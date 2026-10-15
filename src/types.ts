@@ -174,6 +174,8 @@ export interface ProjectArtifacts {
   landingPage: string;
   deliveryZip: string;
   carouselPdf?: string;
+  /** JPEG of every guide page, shown on the review page instead of the PDF until the client has paid. */
+  guidePages?: string[];
   carouselSlides?: string[];
   postCards?: string[];
   motionClips?: VideoArtifact[];
@@ -211,6 +213,8 @@ export interface Project {
   prospectId?: string;
   clientId?: string;
   approvedAt?: string;
+  /** Set by the operator when payment for this campaign has been received; unlocks downloads on the review page. */
+  paidAt?: string;
   error?: string;
   mode: 'live' | 'demo';
 }

@@ -76,7 +76,7 @@ async function renderInto(project: Project, directory: string, stage: (message: 
   const browser = await chromium.launch({ headless: true });
   try {
     await stage('Rendering the premium guide');
-    await renderGuidePdf(browser, ebookHtml, pdfPath);
+    artifacts.guidePages = await renderGuidePdf(browser, ebookHtml, pdfPath, path.join(directory, 'review-pages'));
 
     await stage('Rendering the LinkedIn carousel and post visuals');
     try {
@@ -113,8 +113,9 @@ async function renderInto(project: Project, directory: string, stage: (message: 
   return artifacts;
 }
 
-async function renderGuidePdf(browser: Browser, html: string, pdfPath: string): Promise<void> {
-  const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });
+/** Renders the guide PDF and a JPEG of every page for the view-only review page. */
+async function renderGuidePdf(browser: Browser, html: string, pdfPath: string, pagesDir: string): Promise<string[]> {
+  const page = await browser.newPage({ viewport: { width: 794, height: 1123 }, deviceScaleFactor: 1.5 });
   try {
     await page.setContent(html, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -124,6 +125,15 @@ async function renderGuidePdf(browser: Browser, html: string, pdfPath: string): 
     const overflows = await page.locator('.page').evaluateAll((pages) => pages.map((element, index) => ({ index, overflow: element.scrollHeight - element.clientHeight })).filter((item) => item.overflow > 2));
     if (overflows.length) throw new Error(`PDF layout overflow detected on pages: ${overflows.map((item) => item.index + 1).join(', ')}`);
     await page.pdf({ path: pdfPath, format: 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
+    await mkdir(pagesDir, { recursive: true });
+    const pages = page.locator('.page');
+    const files: string[] = [];
+    for (let index = 0; index < await pages.count(); index += 1) {
+      const file = path.join(pagesDir, `guide-page-${String(index + 1).padStart(2, '0')}.jpg`);
+      await pages.nth(index).screenshot({ path: file, type: 'jpeg', quality: 82 });
+      files.push(file);
+    }
+    return files;
   } finally {
     await page.close();
   }
@@ -285,7 +295,7 @@ async function zipDirectory(directory: string, destination: string): Promise<voi
     archive.on('error', reject);
     archive.pipe(output);
     // Posters and working files are for the review page only; the client gets the finished assets.
-    archive.glob('**/*', { cwd: directory, ignore: [path.basename(destination), '**/*.poster.jpg', '**/.work/**', 'premium-guide.html'] });
+    archive.glob('**/*', { cwd: directory, ignore: [path.basename(destination), '**/*.poster.jpg', '**/.work/**', 'review-pages/**', 'premium-guide.html'] });
     void archive.finalize();
   });
 }
