@@ -77,27 +77,44 @@ describe('client review', () => {
     expect(html).toContain('Request one revision');
   });
 
-  it('shows the designed guide, post visuals, carousel and clips, and serves only listed files', async () => {
+  it('is view-only until paid: guide as page images, no PDFs, then unlocks downloads', async () => {
     const project = await projectInReview();
     const dir = path.join(config.artifactDir, project.id);
     await mkdir(path.join(dir, 'linkedin'), { recursive: true });
+    await mkdir(path.join(dir, 'review-pages'), { recursive: true });
     const file = (name: string) => path.join(dir, name);
-    await Promise.all(['premium-guide.pdf', 'linkedin/post-01.png', 'linkedin/carousel-slide-01.png', 'secret.json'].map((name) => writeFile(file(name), `fixture ${name}`)));
+    await Promise.all(['premium-guide.pdf', 'linkedin/carousel.pdf', 'review-pages/guide-page-01.jpg', 'linkedin/post-01.png', 'linkedin/carousel-slide-01.png', 'secret.json'].map((name) => writeFile(file(name), `fixture ${name}`)));
     await projects.update(project.id, { artifacts: {
       pdf: file('premium-guide.pdf'), landingPage: file('landing.html'), deliveryZip: file('delivery.zip'),
+      carouselPdf: file('linkedin/carousel.pdf'), guidePages: [file('review-pages/guide-page-01.jpg')],
       postCards: [file('linkedin/post-01.png')], carouselSlides: [file('linkedin/carousel-slide-01.png')],
       motionClips: [{ file: file('quote-clip-01.mp4'), poster: file('quote-clip-01.poster.jpg'), title: 'A quote', kind: 'quote', durationSeconds: 9 }],
     } });
-    const html = (await request(app).get(`/review/${project.reviewToken}`).expect(200)).text;
-    expect(html).toContain(`/review/${project.reviewToken}/assets/post-01.png`);
-    expect(html).toContain('Open the designed guide (PDF)');
+    const review = `/review/${project.reviewToken}`;
+    let html = (await request(app).get(review).expect(200)).text;
+    expect(html).toContain(`${review}/assets/post-01.png`);
+    expect(html).toContain(`${review}/assets/guide-page-01.jpg`);
+    expect(html).not.toContain('Open the designed guide (PDF)');
+    expect(html).toContain('controlslist="nodownload"');
     expect(html).toContain('LinkedIn carousel');
     expect(html).toContain('Quote clip');
-    const served = await request(app).get(`/review/${project.reviewToken}/assets/post-01.png`).expect(200);
+    const served = await request(app).get(`${review}/assets/post-01.png`).expect(200);
     expect(served.headers['cache-control']).toContain('private');
-    await request(app).get(`/review/${project.reviewToken}/assets/secret.json`).expect(404);
-    await request(app).get(`/review/${project.reviewToken}/assets/..%2Fsecret.json`).expect(404);
+    await request(app).get(`${review}/assets/guide-page-01.jpg`).expect(200);
+    await request(app).get(`${review}/assets/premium-guide.pdf`).expect(404);
+    await request(app).get(`${review}/assets/carousel.pdf`).expect(404);
+    await request(app).get(`${review}/assets/secret.json`).expect(404);
+    await request(app).get(`${review}/assets/..%2Fsecret.json`).expect(404);
     await request(app).get(`/review/wrong-token/assets/post-01.png`).expect(404);
+
+    await request(app).post(`/api/projects/${project.id}/mark-paid`).expect(401);
+    const paid = await request(app).post(`/api/projects/${project.id}/mark-paid`).set('x-adforge-key', KEY).expect(200);
+    expect(paid.body.paidAt).toBeTruthy();
+    html = (await request(app).get(review).expect(200)).text;
+    expect(html).toContain('Open the designed guide (PDF)');
+    expect(html).not.toContain('controlslist="nodownload"');
+    await request(app).get(`${review}/assets/premium-guide.pdf`).expect(200);
+    await request(app).get(`${review}/assets/carousel.pdf`).expect(200);
   });
 
   it('enforces the single consolidated revision round', async () => {

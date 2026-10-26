@@ -90,7 +90,7 @@ export async function createApp() {
 
   app.get('/review/:token/assets/:name', asyncHandler(async (request, response) => {
     const project = (await store.list()).find((item) => item.reviewToken === request.params.token);
-    const file = reviewAssetFiles(project?.artifacts).find((candidate) => path.basename(candidate) === request.params.name);
+    const file = reviewAssetFiles(project?.artifacts, Boolean(project?.paidAt)).find((candidate) => path.basename(candidate) === request.params.name);
     if (!file) return response.status(404).send('Not found');
     response.setHeader('Cache-Control', 'private, max-age=300');
     response.setHeader('X-Robots-Tag', 'noindex');
@@ -255,6 +255,11 @@ export async function createApp() {
     await store.setStatus(id, 'queued', 8, 'Project queued by operator');
     pipeline.enqueue(id);
     response.status(202).json({ status: 'queued' });
+  }));
+  app.post('/api/projects/:id/mark-paid', asyncHandler(async (request, response) => {
+    const id = param(request, 'id');
+    if (!(await store.get(id))) return response.status(404).json({ error: 'Project not found' });
+    response.json(await store.update(id, { paidAt: new Date().toISOString() }, { type: 'note', message: 'Payment received; review page downloads unlocked' }));
   }));
   app.post('/api/projects/:id/approve', asyncHandler(async (request, response) => {
     const approved = await store.update(param(request, 'id'), { status: 'approved', approvedAt: new Date().toISOString() }, { type: 'approval', message: 'Campaign approved by operator' });
