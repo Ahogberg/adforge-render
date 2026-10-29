@@ -117,6 +117,32 @@ describe('client review', () => {
     await request(app).get(`${review}/assets/carousel.pdf`).expect(200);
   });
 
+  it('shows the editorial brief and the publishing plan, with downloads only after payment', async () => {
+    const project = await projectInReview();
+    const dir = path.join(config.artifactDir, project.id);
+    await mkdir(dir, { recursive: true });
+    const file = (name: string) => path.join(dir, name);
+    await Promise.all(['premium-guide.pdf', 'editorial-brief-and-plan.pdf', 'publishing-plan.ics'].map((name) => writeFile(file(name), `fixture ${name}`)));
+    await projects.update(project.id, {
+      bundle: { ...project.bundle!, editorialBrief: { strongestIdeas: [{ idea: 'Approval is not the finish', why: 'It is backed by a figure.' }], angleRationale: 'Partners need the handover, not the model.', leftOut: [{ idea: 'Pricing software', why: 'Off-audience.' }] } },
+      artifacts: { pdf: file('premium-guide.pdf'), landingPage: file('landing.html'), deliveryZip: file('delivery.zip'), briefPdf: file('editorial-brief-and-plan.pdf'), publishingPlanIcs: file('publishing-plan.ics'),
+        publishingPlan: [{ week: 1, date: '2026-11-09', weekday: 'Monday', channel: 'Email', title: 'Email 1: deliver the guide', detail: 'Subject: Your guide' }] },
+    });
+    const review = `/review/${project.reviewToken}`;
+    let html = (await request(app).get(review).expect(200)).text;
+    expect(html).toContain('Why we chose this angle');
+    expect(html).toContain('Approval is not the finish');
+    expect(html).toContain('Left out, on purpose');
+    expect(html).toContain('30-day publishing plan');
+    expect(html).toContain('Email 1: deliver the guide');
+    expect(html).not.toContain('publishing-plan.ics');
+    await request(app).get(`${review}/assets/editorial-brief-and-plan.pdf`).expect(404);
+    await request(app).post(`/api/projects/${project.id}/mark-paid`).set('x-adforge-key', KEY).expect(200);
+    html = (await request(app).get(review).expect(200)).text;
+    expect(html).toContain(`${review}/assets/publishing-plan.ics`);
+    await request(app).get(`${review}/assets/editorial-brief-and-plan.pdf`).expect(200);
+  });
+
   it('enforces the single consolidated revision round', async () => {
     const project = await projectInReview(1);
     await request(app).post(`/api/review/${project.reviewToken}`).type('form').send({ decision: 'revise', note: 'Change everything again' }).expect(409);
