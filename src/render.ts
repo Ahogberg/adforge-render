@@ -8,6 +8,7 @@ import { chromium, type Browser } from 'playwright';
 import { config } from './config.js';
 import { designSystemFor, displayDomain, displayQuote, waveformSvg, type DesignSystem } from './design.js';
 import { renderMotionClips } from './motion.js';
+import { buildPublishingPlan, planStart, publishingPlanIcs, publishingPlanMarkdown, type PlanItem } from './plan.js';
 import { renderSocialAssets } from './social.js';
 import { renderSpeakerClips } from './speaker-clips.js';
 import { effectiveLayout, type CampaignBundle, type CampaignSection, type Project, type ProjectArtifacts, type SectionLayout } from './types.js';
@@ -103,6 +104,12 @@ async function renderInto(project: Project, directory: string, stage: (message: 
         notes.push(`Clips from the recording could not be rendered: ${messageOf(error)}`);
       }
     }
+    await stage('Writing the editorial brief and publishing plan');
+    try {
+      Object.assign(artifacts, await renderBriefAndPlan(browser, project, bundle, design, artifacts, directory));
+    } catch (error) {
+      notes.push(`Editorial brief and publishing plan could not be rendered: ${messageOf(error)}`);
+    }
   } finally {
     await browser.close();
   }
@@ -137,6 +144,49 @@ async function renderGuidePdf(browser: Browser, html: string, pdfPath: string, p
   } finally {
     await page.close();
   }
+}
+
+/** The first plan page has an introduction, so it holds fewer rows than continuation pages. */
+function chunkPlan<T>(rows: T[], first = 11, rest = 17): Array<{ rows: T[]; first: boolean }> {
+  const pages = [{ rows: rows.slice(0, first), first: true }];
+  for (let index = first; index < rows.length; index += rest) pages.push({ rows: rows.slice(index, index + rest), first: false });
+  return pages;
+}
+
+const SHORT_DAYS: Record<string, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
+
+/** Editorial brief (when the writer produced one) and the 30-day plan as a PDF, a calendar file and markdown. */
+async function renderBriefAndPlan(browser: Browser, project: Project, bundle: CampaignBundle, design: DesignSystem, artifacts: ProjectArtifacts, directory: string): Promise<Pick<ProjectArtifacts, 'briefPdf' | 'publishingPlanIcs' | 'publishingPlan'>> {
+  const start = planStart(new Date());
+  const plan = buildPublishingPlan(bundle, artifacts, start);
+  const company = project.intake.companyName;
+  const icsPath = path.join(directory, 'publishing-plan.ics');
+  await writeFile(icsPath, publishingPlanIcs(plan, company, project.id), 'utf8');
+  await writeFile(path.join(directory, 'publishing-plan.md'), publishingPlanMarkdown(plan, company), 'utf8');
+  const html = normalizeTypography(await renderTemplate('brief.hbs', {
+    design, bundle, company,
+    brief: bundle.editorialBrief,
+    issueLabel: new Date(project.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    planStartLabel: new Date(`${plan[0]?.date ?? start.toISOString().slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
+    planPages: chunkPlan(plan.map((item: PlanItem, index: number) => ({
+      ...item,
+      weekStart: index > 0 && item.week !== plan[index - 1]?.week,
+      weekdayShort: SHORT_DAYS[item.weekday] ?? item.weekday,
+      dateLabel: new Date(`${item.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+    }))),
+  }));
+  const briefPath = path.join(directory, 'editorial-brief-and-plan.pdf');
+  const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });
+  try {
+    await page.setContent(html, { waitUntil: 'load' });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const overflows = await page.locator('.page').evaluateAll((pages) => pages.map((element, index) => ({ index, overflow: element.scrollHeight - element.clientHeight })).filter((item) => item.overflow > 2));
+    if (overflows.length) throw new Error(`brief layout overflow on page ${overflows.map((item) => item.index + 1).join(', ')}`);
+    await page.pdf({ path: briefPath, format: 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } });
+  } finally {
+    await page.close();
+  }
+  return { briefPdf: briefPath, publishingPlanIcs: icsPath, publishingPlan: plan };
 }
 
 const LAYOUT_LABELS: Record<SectionLayout, string> = { essay: 'Argument', framework: 'Framework', stat: 'Evidence', comparison: 'Comparison' };

@@ -13,6 +13,7 @@ import {
   type CampaignBundle,
   type Client,
   type ClientMemory,
+  type EditorialBrief,
   type Intake,
   type ProspectInput,
   type ProspectPreview,
@@ -76,8 +77,13 @@ const ideasJsonSchema = {
 
 const planJsonSchema = {
   type: 'object', additionalProperties: false,
-  required: ['thesis', 'campaignAngle', 'title', 'subtitle', 'sections', 'postAngles', 'emailPlan'],
+  required: ['thesis', 'campaignAngle', 'title', 'subtitle', 'sections', 'postAngles', 'emailPlan', 'editorialBrief'],
   properties: {
+    editorialBrief: { type: 'object', additionalProperties: false, required: ['strongestIdeas', 'angleRationale', 'leftOut'], properties: {
+      strongestIdeas: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'object', additionalProperties: false, required: ['idea', 'why'], properties: { idea: { type: 'string' }, why: { type: 'string' } } } },
+      angleRationale: { type: 'string' },
+      leftOut: { type: 'array', maxItems: 3, items: { type: 'object', additionalProperties: false, required: ['idea', 'why'], properties: { idea: { type: 'string' }, why: { type: 'string' } } } },
+    } },
     thesis: { type: 'string' }, campaignAngle: { type: 'string' }, title: { type: 'string' }, subtitle: { type: 'string' },
     sections: { type: 'array', minItems: 4, maxItems: 7, items: { type: 'object', additionalProperties: false, required: ['eyebrow', 'title', 'point', 'ideaNumbers', 'layout'], properties: {
       eyebrow: { type: 'string' }, title: { type: 'string' }, point: { type: 'string' }, ideaNumbers: { type: 'array', items: { type: 'integer' } },
@@ -223,8 +229,8 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
     `${brief}\n\nSOURCE TRANSCRIPT\n${context.transcript.slice(0, MAX_TRANSCRIPT_CHARS)}`);
 
   await stage('Choosing one thesis and planning the campaign');
-  const plan = await structured<{ campaignAngle: string; title: string; subtitle: string }>('adforge_campaign_plan', planJsonSchema,
-    `You are the senior B2B editor inside Afterword. Choose ONE central thesis that is useful to the audience and naturally supports the client's offer without becoming a brochure. Plan a guide of 4 to 7 sections that builds one argument, eight LinkedIn angles that each carry a different idea, and three emails with the jobs deliver, develop, invite. Give each section a layout (essay, framework, stat, comparison) that fits what the source actually contains: framework only when the speaker gives steps or named parts, stat only when the speaker states a figure, comparison only when the argument contrasts two approaches. Do not repeat angles or hooks from past campaigns. Honour every client rule and correction.`,
+  const plan = await structured<{ campaignAngle: string; title: string; subtitle: string; editorialBrief: EditorialBrief }>('adforge_campaign_plan', planJsonSchema,
+    `You are the senior B2B editor inside Afterword. Choose ONE central thesis that is useful to the audience and naturally supports the client's offer without becoming a brochure. Plan a guide of 4 to 7 sections that builds one argument, eight LinkedIn angles that each carry a different idea, and three emails with the jobs deliver, develop, invite. Give each section a layout (essay, framework, stat, comparison) that fits what the source actually contains: framework only when the speaker gives steps or named parts, stat only when the speaker states a figure, comparison only when the argument contrasts two approaches. Do not repeat angles or hooks from past campaigns. Honour every client rule and correction. Also write the editorial brief the client will read, addressed to the client in plain words: the three strongest ideas in the recording (each idea at most 14 words, why at most 30 words, naming what in the source makes it strong), why this angle suits this audience and offer (at most 70 words), and up to three ideas you deliberately left out and why (for example off-audience, not supported by the source, or worth its own month). Be specific and honest; no flattery.`,
     `${brief}\n\nEXTRACTED IDEAS\n${JSON.stringify(ideas)}`);
 
   await stage('Writing the premium guide');
@@ -241,23 +247,25 @@ export async function generateCampaign(context: CampaignContext): Promise<Campai
   const draft = normalizeBundle({ campaignAngle: plan.campaignAngle, title: plan.title, subtitle: plan.subtitle, ...guide, ...derived });
 
   await stage('Editor pass: voice, repetition, and client rules');
-  return editBundle(context, draft, [
+  const edited = await editBundle(context, draft, [
     'Tighten every asset. Remove repetition across the eight posts, clichés, filler, and anything that sounds generated.',
     'Enforce every terminology rule and never use a banned phrase.',
     'Keep verbatim quotes and figures exactly as written. Keep the structure, the section layouts and feature blocks, and the number of items; tighten wording within the same limits.',
   ]);
+  return { ...edited, editorialBrief: plan.editorialBrief };
 }
 
 /** Targeted rewrite after a failed quality gate; far cheaper than regenerating the campaign. */
 export async function repairCampaign(context: CampaignContext, bundle: CampaignBundle, failures: string[]): Promise<CampaignBundle> {
   if (!client) return bundle;
   await context.onStage?.('Repairing the draft after a failed quality gate');
-  return editBundle(context, bundle, [
+  const repaired = await editBundle(context, bundle, [
     'The draft failed automated checks. Fix exactly these problems and change nothing else:',
     ...failures.map((failure) => `- ${failure}`),
     'For a quote that could not be found, replace it with a verbatim sentence from the transcript or remove it.',
     'For a figure that could not be found, use the figure exactly as said in the transcript, or change that section to the essay layout and set stat to null.',
   ], true);
+  return { ...repaired, editorialBrief: bundle.editorialBrief };
 }
 
 /** Distils a client's revision note into durable rules for future months. */
@@ -459,6 +467,17 @@ function createDemoBundle(intake: Intake, transcript: string, revisionNote: stri
         { heading: 'Summaries report. Arguments decide.', body: 'Commit to one point and tell the reader what to do about it.' },
       ],
       closing: 'The full field guide has the checklist for your next recording.',
+    },
+    editorialBrief: {
+      strongestIdeas: [
+        { idea: 'Expert firms already have more insight than they publish.', why: 'It opens the recording and every later point depends on it, so it frames the whole guide.' },
+        { idea: 'A recording is evidence, not finished content.', why: 'It changes what the audience does in the first hour after a session, which makes it actionable.' },
+        { idea: 'Buyers want one clear way to decide, not more content.', why: 'The speaker backs it with interviews, and it ties directly to the offer.' },
+      ],
+      angleRationale: 'The audience runs expert-led firms that record sessions but rarely reuse them. Framing the recording as evidence gives them a concrete change to make this week and leads naturally to the call to action, without turning the guide into a brochure.',
+      leftOut: [
+        { idea: 'Tooling for transcription and editing.', why: 'Useful but off-audience: partners care about the decision, not the software.' },
+      ],
     },
   };
 }

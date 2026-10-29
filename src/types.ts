@@ -1,3 +1,4 @@
+import type { PlanItem } from './plan.js';
 import { z } from 'zod';
 
 export const projectStatusSchema = z.enum([
@@ -82,6 +83,13 @@ export function effectiveLayout(section: { layout?: SectionLayout | null; framew
   return 'essay';
 }
 
+/** The editor's reasoning, shown to the client: what the recording offered and why this angle. */
+export const editorialBriefSchema = z.object({
+  strongestIdeas: z.array(z.object({ idea: z.string(), why: z.string() })).min(1).max(4),
+  angleRationale: z.string(),
+  leftOut: z.array(z.object({ idea: z.string(), why: z.string() })).max(4),
+});
+
 export const carouselSchema = z.object({
   title: z.string(),
   slides: z.array(z.object({ heading: z.string(), body: z.string() })).min(3).max(8),
@@ -108,6 +116,8 @@ export const campaignBundleSchema = z.object({
   sourceReferences: z.array(sourceReferenceSchema).max(20),
   /** LinkedIn document carousel derived from the guide. Older campaigns have none. */
   carousel: carouselSchema.nullable().optional().transform((value) => value ?? undefined),
+  /** Older campaigns have none. */
+  editorialBrief: editorialBriefSchema.nullable().optional().transform((value) => value ?? undefined),
 });
 
 export const qualityReportSchema = z.object({
@@ -123,6 +133,7 @@ export type Framework = z.infer<typeof frameworkSchema>;
 export type Stat = z.infer<typeof statSchema>;
 export type Comparison = z.infer<typeof comparisonSchema>;
 export type Carousel = z.infer<typeof carouselSchema>;
+export type EditorialBrief = z.infer<typeof editorialBriefSchema>;
 
 /** Sections written before layouts existed have no layout fields; all of them are optional. */
 export interface CampaignSection {
@@ -137,9 +148,10 @@ export interface CampaignSection {
   comparison?: Comparison;
 }
 
-export type CampaignBundle = Omit<z.infer<typeof campaignBundleSchema>, 'sections' | 'carousel'> & {
+export type CampaignBundle = Omit<z.infer<typeof campaignBundleSchema>, 'sections' | 'carousel' | 'editorialBrief'> & {
   sections: CampaignSection[];
   carousel?: Carousel;
+  editorialBrief?: EditorialBrief;
 };
 export type QualityReport = z.infer<typeof qualityReportSchema>;
 
@@ -174,6 +186,11 @@ export interface ProjectArtifacts {
   landingPage: string;
   deliveryZip: string;
   carouselPdf?: string;
+  /** Editorial brief and 30-day publishing plan as a designed PDF. */
+  briefPdf?: string;
+  /** Calendar file with every item of the publishing plan. */
+  publishingPlanIcs?: string;
+  publishingPlan?: PlanItem[];
   /** JPEG of every guide page, shown on the review page instead of the PDF until the client has paid. */
   guidePages?: string[];
   carouselSlides?: string[];

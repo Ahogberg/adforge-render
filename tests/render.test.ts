@@ -63,6 +63,14 @@ describe('guide rendering', () => {
     const landing = await readFile(artifacts.landingPage, 'utf8');
     expect(landing).toContain('data:font/woff2;base64,');
     expect(artifacts.notes).toBeUndefined();
+    // The editorial brief and the 30-day plan come as a PDF and a calendar file.
+    expect(bundle.editorialBrief?.strongestIdeas).toHaveLength(3);
+    expect((await stat(artifacts.briefPdf as string)).size).toBeGreaterThan(10_000);
+    expect(await readFile(artifacts.publishingPlanIcs as string, 'utf8')).toContain('BEGIN:VEVENT');
+    expect(artifacts.publishingPlan?.filter((item) => item.title.startsWith('Post '))).toHaveLength(8);
+    const zip = await readFile(artifacts.deliveryZip, 'latin1');
+    expect(zip).toContain('publishing-plan.ics');
+    expect(zip).toContain('editorial-brief-and-plan.pdf');
   }, 90_000);
 });
 
