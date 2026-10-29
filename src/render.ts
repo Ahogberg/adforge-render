@@ -146,6 +146,13 @@ async function renderGuidePdf(browser: Browser, html: string, pdfPath: string, p
   }
 }
 
+/** The first plan page has an introduction, so it holds fewer rows than continuation pages. */
+function chunkPlan<T>(rows: T[], first = 11, rest = 17): Array<{ rows: T[]; first: boolean }> {
+  const pages = [{ rows: rows.slice(0, first), first: true }];
+  for (let index = first; index < rows.length; index += rest) pages.push({ rows: rows.slice(index, index + rest), first: false });
+  return pages;
+}
+
 const SHORT_DAYS: Record<string, string> = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
 
 /** Editorial brief (when the writer produced one) and the 30-day plan as a PDF, a calendar file and markdown. */
@@ -161,12 +168,12 @@ async function renderBriefAndPlan(browser: Browser, project: Project, bundle: Ca
     brief: bundle.editorialBrief,
     issueLabel: new Date(project.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
     planStartLabel: new Date(`${plan[0]?.date ?? start.toISOString().slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
-    plan: plan.map((item: PlanItem, index: number) => ({
+    planPages: chunkPlan(plan.map((item: PlanItem, index: number) => ({
       ...item,
       weekStart: index > 0 && item.week !== plan[index - 1]?.week,
       weekdayShort: SHORT_DAYS[item.weekday] ?? item.weekday,
       dateLabel: new Date(`${item.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-    })),
+    }))),
   }));
   const briefPath = path.join(directory, 'editorial-brief-and-plan.pdf');
   const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });

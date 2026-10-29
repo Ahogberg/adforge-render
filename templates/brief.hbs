@@ -76,22 +76,28 @@
     <div class="folio"><span>{{company}} · Editorial brief</span><span>Afterword</span></div>
   </section>
   {{/if}}
+  {{#each planPages}}
   <section class="page">
-    <div class="top"><span class="label">{{company}}</span><span class="label">Publishing plan · from {{planStartLabel}}</span></div>
+    <div class="top"><span class="label">{{../company}}</span><span class="label">Publishing plan · from {{../planStartLabel}}</span></div>
+    {{#if first}}
     <div class="plan-intro">
       <span class="label">The next 30 days</span>
       <h1>When each piece goes out</h1>
       <p>Two posts a week, the carousel in week two, a clip most Fridays and the three emails a week apart. The calendar file in your delivery adds every item to your calendar in one click.</p>
     </div>
+    {{else}}
+    <div class="plan-intro"><span class="label">Publishing plan, continued</span></div>
+    {{/if}}
     <table>
       <thead><tr><th>When</th><th>Channel</th><th>What</th></tr></thead>
       <tbody>
-        {{#each plan}}
+        {{#each rows}}
         <tr class="{{#if weekStart}}week-start{{/if}}"><td class="when">Week {{week}} · {{weekdayShort}} {{dateLabel}}</td><td class="channel"><span class="chip">{{channel}}</span></td><td class="what"><b>{{title}}</b><span>{{detail}}</span></td></tr>
         {{/each}}
       </tbody>
     </table>
-    <div class="folio"><span>{{company}} · Publishing plan</span><span>Afterword</span></div>
+    <div class="folio"><span>{{../company}} · Publishing plan</span><span>Afterword</span></div>
   </section>
+  {{/each}}
 </body>
 </html>

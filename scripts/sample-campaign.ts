@@ -125,6 +125,18 @@ const bundle: CampaignBundle = {
     { claim: 'The review figures', quote: 'Last year we reviewed 40 pricing changes at services firms. 31 of them were approved unanimously by the partners. And 19 of those 31 had quietly reverted within 90 days.', speaker: 'Maya Chen', timestamp: '00:45' },
     { claim: 'The handover', quote: 'The spreadsheet was never the problem. The handover was.', speaker: 'Maya Chen', timestamp: '01:09' },
   ],
+  editorialBrief: {
+    strongestIdeas: [
+      { idea: 'Unanimous approval does not mean the new rate held.', why: 'It is the one hard figure in the webinar: 19 of 31 approved changes reverted within 90 days.' },
+      { idea: 'The partner who argued for the change should write the client sentence.', why: 'It gives the reader a specific owner and a task, which turns the diagnosis into something they can act on.' },
+      { idea: 'Check what was invoiced, not what was agreed.', why: 'A concrete 90-day review with a clear test, and the strongest close for a guide aimed at managing partners.' },
+    ],
+    angleRationale: 'Managing partners already believe in their pricing model. What they underestimate is the handover from the partner meeting to the client conversation and the invoice. Framing the guide around that gap gives them three decisions to make before the next rate change, and it leads naturally to a pricing review with Northstar.',
+    leftOut: [
+      { idea: 'How to build the pricing model itself.', why: 'The webinar treats it as solved, and the audience does not need convincing there.' },
+      { idea: 'Client segmentation for different rate rises.', why: 'Mentioned in passing without examples; it deserves its own month with better source material.' },
+    ],
+  },
   carousel: {
     title: 'Will the approved rate reach the invoice?',
     slides: [
@@ -148,7 +160,7 @@ const project: Project = {
 const artifacts = await renderArtifacts(project);
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
-const files = [artifacts.pdf, artifacts.carouselPdf, ...(artifacts.carouselSlides ?? []), ...(artifacts.postCards ?? []),
+const files = [artifacts.pdf, artifacts.carouselPdf, artifacts.briefPdf, artifacts.publishingPlanIcs, ...(artifacts.carouselSlides ?? []), ...(artifacts.postCards ?? []),
   ...(artifacts.motionClips ?? []).flatMap((clip) => [clip.file, clip.poster])].filter(Boolean) as string[];
 for (const file of files) await cp(file, path.join(out, path.basename(file)));
 console.log(JSON.stringify({ out, design: artifacts.designSummary, notes: artifacts.notes, files: files.map((f) => path.basename(f)) }, null, 2));
